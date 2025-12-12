@@ -1,0 +1,11 @@
+{
+  "tasks": {
+    "deploy": "supabase functions deploy telegram-notifications"
+  },
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true
+  },
+  "importMap": "import_map.json"
+}

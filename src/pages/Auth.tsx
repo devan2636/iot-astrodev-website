@@ -186,7 +186,7 @@ const Auth = () => {
               <p className="text-xs opacity-90 mb-1">Developed by</p>
               <p className="font-semibold text-sm">Astrodev Team</p>
               <p className="text-xs opacity-75">Lovable x Astrodev</p>
-              <p className="text-xs opacity-60 mt-1">info@astrodev.com</p>
+              <p className="text-xs opacity-60 mt-1">devandrisuherman9@gmail.com</p>
             </div>
           </div>
         </div>
@@ -298,6 +298,11 @@ const Auth = () => {
               <p className="text-xs text-center text-gray-500">
                 Dengan melanjutkan, Anda menyetujui Syarat Penggunaan dan Kebijakan Privasi kami.
               </p>
+              <div className="flex items-center justify-center">
+                <Button variant="ghost" size="sm" onClick={() => navigate('/public-map')}>
+                  View Public Dashboard
+                </Button>
+              </div>
               
               {/* Developer Info for Mobile */}
               <div className="lg:hidden text-center">
@@ -305,7 +310,7 @@ const Auth = () => {
                   <p className="text-xs text-gray-600 mb-1">Developed by</p>
                   <p className="text-sm font-semibold text-gray-800">Astrodev Team</p>
                   <p className="text-xs text-gray-500">Lovable x Astrodev</p>
-                  <p className="text-xs text-gray-400 mt-1">info@astrodev.com</p>
+                  <p className="text-xs text-gray-400 mt-1">devandrisuherman9@gmail.com</p>
                 </div>
               </div>
             </CardFooter>

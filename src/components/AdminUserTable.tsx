@@ -1,340 +1,315 @@
-
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useToast } from '@/hooks/use-toast';
+import React, { useEffect, useState } from 'react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { 
+  MoreHorizontal, 
+  Trash2, 
+  UserCog, 
+  ShieldAlert, 
+  Search, 
+  Mail,
+  Calendar,
+  CheckCircle2,
+  XCircle
+} from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import type { Database } from '@/integrations/supabase/types';
-
-type AppRole = Database['public']['Enums']['app_role'];
-
-interface Profile {
-  id: string;
-  username: string;
-  role: AppRole;
-  created_at: string;
-  updated_at: string;
-}
-
-interface User {
-  id: string;
-  email: string;
-  email_confirmed_at: string;
-  created_at: string;
-}
-
-interface UserWithProfile extends User {
-  profile?: Profile;
-}
+import { useToast } from '@/hooks/use-toast';
 
 const AdminUserTable = () => {
-  const [users, setUsers] = useState<UserWithProfile[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserRole, setCurrentUserRole] = useState<AppRole>('user');
+  const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
 
+  // State untuk User yang sedang login
+  const [currentUserRole, setCurrentUserRole] = useState<string>('');
+
   useEffect(() => {
-    fetchCurrentUserRole();
+    fetchCurrentUser();
     fetchUsers();
   }, []);
 
-  const fetchCurrentUserRole = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-        
-        if (profile) {
-          setCurrentUserRole(profile.role || 'user');
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching current user role:', error);
+  // Filter fungsi pencarian
+  useEffect(() => {
+    const filtered = users.filter(user => 
+      (user.username?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (user.email?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+    );
+    setFilteredUsers(filtered);
+  }, [searchTerm, users]);
+
+  const fetchCurrentUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      setCurrentUserRole(data?.role || 'user');
     }
   };
 
   const fetchUsers = async () => {
     try {
-      // Get all profiles with user data
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
+      setLoading(true);
+      // MENGGUNAKAN VIEW 'user_details' AGAR EMAIL MUNCUL
+      const { data, error } = await supabase
+        .from('user_details') 
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (profilesError) throw profilesError;
-
-      // Try to get auth users using Supabase Admin API
-      try {
-        const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
-
-        if (authError) {
-          console.error('Error fetching auth users:', authError);
-          // Fallback: Create user data from profiles with real email pattern
-          const usersData = profiles?.map(profile => {
-            // Try to extract a more realistic email from the username or use a pattern
-            const email = profile.username?.includes('@') 
-              ? profile.username 
-              : `${profile.username || profile.id.substring(0, 8)}@example.com`;
-            
-            return {
-              id: profile.id,
-              email: email,
-              email_confirmed_at: profile.created_at || '',
-              created_at: profile.created_at || '',
-              profile: profile
-            };
-          }) || [];
-          setUsers(usersData);
-        } else {
-          // Combine auth users with profiles
-          const usersData = authUsers.users.map(user => ({
-            ...user,
-            profile: profiles?.find(p => p.id === user.id)
-          }));
-          setUsers(usersData);
-          console.log('Auth users with profiles:', usersData);
-        }
-      } catch (adminError) {
-        console.error('Admin API not accessible:', adminError);
-        // Enhanced fallback: show profiles with better email handling
-        const usersData = profiles?.map(profile => {
-          // Try to get a more realistic email
-          const email = profile.username?.includes('@') 
-            ? profile.username 
-            : `${profile.username || 'user'}@domain.com`;
-          
-          return {
-            id: profile.id,
-            email: email,
-            email_confirmed_at: profile.created_at || '',
-            created_at: profile.created_at || '',
-            profile: profile
-          };
-        }) || [];
-        setUsers(usersData);
-      }
+      if (error) throw error;
+      setUsers(data || []);
+      setFilteredUsers(data || []);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast({
-        title: 'Error',
-        description: 'Gagal memuat data pengguna',
-        variant: 'destructive',
+        title: "Gagal Memuat Data",
+        description: "Tidak dapat mengambil daftar pengguna.",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRoleChange = async (userId: string, newRole: AppRole) => {
+  const handleRoleChange = async (userId: string, newRole: string) => {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ 
-          role: newRole, 
-          updated_at: new Date().toISOString() 
-        })
+        .update({ role: newRole, updated_at: new Date().toISOString() })
         .eq('id', userId);
 
       if (error) throw error;
 
-      // Update local state
-      setUsers(users.map(user => 
-        user.id === userId 
-          ? { ...user, profile: { ...user.profile!, role: newRole } }
-          : user
-      ));
+      // Update local state agar tidak perlu refresh
+      const updatedUsers = users.map(user => 
+        user.id === userId ? { ...user, role: newRole } : user
+      );
+      setUsers(updatedUsers);
 
       toast({
-        title: 'Berhasil',
-        description: 'Role pengguna berhasil diperbarui',
+        title: "Role Diperbarui",
+        description: `User berhasil diubah menjadi ${newRole}`,
       });
     } catch (error) {
-      console.error('Error updating role:', error);
       toast({
-        title: 'Error',
-        description: 'Gagal memperbarui role pengguna',
-        variant: 'destructive',
+        title: "Gagal Update",
+        description: "Terjadi kesalahan saat mengubah role.",
+        variant: "destructive",
       });
     }
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus pengguna ini?')) {
-      return;
-    }
-
     try {
-      // Try to delete from auth.users (requires admin privileges)
-      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
 
-      if (authError) {
-        console.error('Auth delete error:', authError);
-        // Fallback: just delete from profiles
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .delete()
-          .eq('id', userId);
+      if (error) throw error;
 
-        if (profileError) throw profileError;
-      }
-
-      // Update local state
       setUsers(users.filter(user => user.id !== userId));
-
       toast({
-        title: 'Berhasil',
-        description: 'Pengguna berhasil dihapus',
+        title: "User Dihapus",
+        description: "Pengguna berhasil dihapus dari database.",
       });
     } catch (error) {
-      console.error('Error deleting user:', error);
       toast({
-        title: 'Error',
-        description: 'Gagal menghapus pengguna',
-        variant: 'destructive',
+        title: "Gagal Menghapus",
+        description: "Gagal menghapus pengguna.",
+        variant: "destructive",
       });
     }
   };
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('id-ID');
+    if (!dateString) return "-";
+    return new Date(dateString).toLocaleDateString('id-ID', {
+      day: 'numeric', month: 'short', year: 'numeric'
+    });
   };
 
-  const getRoleBadgeVariant = (role: AppRole) => {
+  const getRoleBadge = (role: string) => {
     switch (role) {
-      case 'superadmin':
-        return 'default';
-      case 'admin':
-        return 'secondary';
-      default:
-        return 'outline';
+      case 'superadmin': 
+        return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-200">Superadmin</Badge>;
+      case 'admin': 
+        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200">Admin</Badge>;
+      default: 
+        return <Badge variant="outline" className="text-gray-600">User</Badge>;
     }
   };
 
-  const canManageUser = (targetRole: AppRole) => {
-    // Superadmin can manage everyone
-    if (currentUserRole === 'superadmin') return true;
-    // Admin can manage users but not other admins or superadmins
-    if (currentUserRole === 'admin' && targetRole === 'user') return true;
-    return false;
-  };
-
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>User Management</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>Loading users...</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>User Management</CardTitle>
-        <CardDescription>
-          Kelola pengguna dan role dalam sistem IoT monitoring
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
+    <div className="space-y-4">
+      {/* Header & Search */}
+      <div className="flex flex-col sm:flex-row justify-between gap-4 items-center bg-slate-50 p-4 rounded-lg border">
+        <div className="space-y-1">
+          <h3 className="font-medium text-slate-900">Daftar Pengguna</h3>
+          <p className="text-xs text-slate-500">Total {filteredUsers.length} pengguna terdaftar</p>
+        </div>
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+          <Input
+            placeholder="Cari username atau email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-8 bg-white"
+          />
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-md border shadow-sm bg-white overflow-hidden">
+        <Table>
+          <TableHeader className="bg-slate-50">
+            <TableRow>
+              <TableHead className="w-[250px]">User Profile</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Registered</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead>Username</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Registered</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableCell colSpan={5} className="h-24 text-center">
+                  Loading data...
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">
-                    {user.profile?.username || 'N/A'}
+            ) : filteredUsers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center text-slate-500">
+                  Tidak ada pengguna yang ditemukan.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredUsers.map((user) => (
+                <TableRow key={user.id} className="hover:bg-slate-50/50">
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-slate-900">{user.username || "No Username"}</span>
+                      <div className="flex items-center text-xs text-slate-500 mt-0.5">
+                        <Mail className="w-3 h-3 mr-1" />
+                        {user.email || "-"}
+                      </div>
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <span className="text-sm">
-                      {user.email}
-                    </span>
+                    {getRoleBadge(user.role)}
                   </TableCell>
                   <TableCell>
-                    {canManageUser(user.profile?.role || 'user') ? (
-                      <Select
-                        value={user.profile?.role || 'user'}
-                        onValueChange={(value: AppRole) => handleRoleChange(user.id, value)}
-                      >
-                        <SelectTrigger className="w-[120px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="user">User</SelectItem>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          {currentUserRole === 'superadmin' && (
-                            <SelectItem value="superadmin">Superadmin</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
+                    {user.email_confirmed_at ? (
+                      <div className="flex items-center text-green-600 text-xs font-medium">
+                        <CheckCircle2 className="w-3 h-3 mr-1" /> Verified
+                      </div>
                     ) : (
-                      <Badge variant={getRoleBadgeVariant(user.profile?.role || 'user')}>
-                        {user.profile?.role || 'user'}
-                      </Badge>
+                      <div className="flex items-center text-yellow-600 text-xs font-medium">
+                        <XCircle className="w-3 h-3 mr-1" /> Pending
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={user.email_confirmed_at ? 'default' : 'secondary'}>
-                      {user.email_confirmed_at ? 'Verified' : 'Pending'}
-                    </Badge>
+                    <div className="flex items-center text-slate-500 text-sm">
+                      <Calendar className="w-3 h-3 mr-2" />
+                      {formatDate(user.created_at)}
+                    </div>
                   </TableCell>
-                  <TableCell>
-                    {formatDate(user.created_at)}
-                  </TableCell>
-                  <TableCell>
-                    {canManageUser(user.profile?.role || 'user') && (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeleteUser(user.id)}
-                      >
-                        Delete
-                      </Button>
-                    )}
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Open menu</span>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        
+                        {/* Opsi Ubah Role */}
+                        <DropdownMenuItem onClick={() => handleRoleChange(user.id, 'user')}>
+                          <UserCog className="mr-2 h-4 w-4" /> Set as User
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleRoleChange(user.id, 'admin')}>
+                          <ShieldAlert className="mr-2 h-4 w-4" /> Set as Admin
+                        </DropdownMenuItem>
+                        
+                        {/* Hanya Superadmin bisa set Superadmin */}
+                        {currentUserRole === 'superadmin' && (
+                          <DropdownMenuItem onClick={() => handleRoleChange(user.id, 'superadmin')}>
+                            <ShieldAlert className="mr-2 h-4 w-4 text-purple-600" /> Set as Superadmin
+                          </DropdownMenuItem>
+                        )}
+                        
+                        <DropdownMenuSeparator />
+                        
+                        {/* Tombol Delete dengan Dialog */}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <div className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-red-100 hover:text-red-900 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 text-red-600 w-full">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete User
+                            </div>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Apakah anda yakin?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Tindakan ini akan menghapus data profil <strong>{user.username}</strong> secara permanen.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Batal</AlertDialogCancel>
+                              <AlertDialogAction 
+                                className="bg-red-600 hover:bg-red-700"
+                                onClick={() => handleDeleteUser(user.id)}
+                              >
+                                Ya, Hapus
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        
-        {users.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            Tidak ada pengguna terdaftar
-          </div>
-        )}
-
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-          <h4 className="font-medium text-blue-900 mb-2">Permission System</h4>
-          <div className="text-sm text-blue-700 space-y-1">
-            <p><strong>User:</strong> Akses dasar untuk melihat dashboard dan data device</p>
-            <p><strong>Admin:</strong> Dapat mengelola device, sensor, dan user biasa</p>
-            <p><strong>Superadmin:</strong> Akses penuh ke seluruh sistem termasuk manajemen admin</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 };
 

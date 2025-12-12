@@ -347,6 +347,56 @@ export type Database = {
         }
         Relationships: []
       }
+      device_status: {
+        Row: {
+          id: string
+          device_id: string
+          status: 'online' | 'offline'
+          battery: number
+          wifi_rssi: number
+          uptime: number
+          free_heap: number
+          ota_update: string | null
+          timestamp: string
+          created_at: string
+          sensor_data: Json | null
+        }
+        Insert: {
+          id?: string
+          device_id: string
+          status?: 'online' | 'offline'
+          battery?: number
+          wifi_rssi?: number
+          uptime?: number
+          free_heap?: number
+          ota_update?: string | null
+          timestamp?: string
+          created_at?: string
+          sensor_data?: Json | null
+        }
+        Update: {
+          id?: string
+          device_id?: string
+          status?: 'online' | 'offline'
+          battery?: number
+          wifi_rssi?: number
+          uptime?: number
+          free_heap?: number
+          ota_update?: string | null
+          timestamp?: string
+          created_at?: string
+          sensor_data?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_status_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       user_device_access_details_view: {
@@ -392,6 +442,17 @@ export type Database = {
             referencedColumns: ["profile_actual_id"]
           },
         ]
+      }
+      user_details: {
+        Row: {
+          id: string
+          email: string | null
+          email_confirmed_at: string | null
+          created_at: string | null
+          username: string | null
+          role: Database["public"]["Enums"]["app_role"] | null
+        }
+        Relationships: []
       }
     }
     Functions: {

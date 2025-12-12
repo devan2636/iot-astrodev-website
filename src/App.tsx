@@ -9,6 +9,8 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
 import WeatherStation from "./pages/WeatherStation";
+import PublicMap from "./pages/PublicMap";
+import { useMqttAutoConnect } from "@/hooks/useMqttAutoConnect";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -21,6 +23,8 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
+  useMqttAutoConnect();
+
   return (
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
@@ -32,6 +36,7 @@ const App = () => {
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/weather-station" element={<WeatherStation />} />
+              <Route path="/public-map" element={<PublicMap />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

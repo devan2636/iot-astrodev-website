@@ -1,12 +1,52 @@
-
-import React, { useEffect, useState, useRef } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Battery, Thermometer, Droplets, Gauge, Wifi } from 'lucide-react';
+// import { Battery, Thermometer, Droplets, Gauge, Wifi, List, Sun } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import 'leaflet/dist/leaflet.css';
+import {
+  Battery,
+  Thermometer,
+  Droplets,
+  Gauge,
+  Wifi,
+  List,
+  Sun,
+  Cloud,
+  Heart,
+  CloudRain,
+  Wind,
+  Compass,
+  TestTube,
+  Lightbulb
+} from 'lucide-react';
+
+// Fix for default markers
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+// Custom icon configuration based on device status
+const createDeviceIcon = (status: string) => {
+  const iconUrl = status === 'online' 
+    ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png'
+    : 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png';
+    
+  return new L.Icon({
+    iconUrl: iconUrl,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+  });
+};
 
 interface Device {
   id: string;
@@ -29,8 +69,6 @@ interface Sensor {
 }
 
 const DeviceMap = () => {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,50 +78,6 @@ const DeviceMap = () => {
     fetchUserRole();
     fetchDevicesAndSensors();
   }, []);
-
-  useEffect(() => {
-    if (!mapContainer.current || devices.length === 0) return;
-
-    // Initialize map with a default token (user should replace this)
-    mapboxgl.accessToken = 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw';
-    
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v11',
-      center: [devices[0].longitude, devices[0].latitude],
-      zoom: 10
-    });
-
-    // Add markers for each device
-    devices.forEach((device) => {
-      if (device.latitude && device.longitude) {
-        const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
-          <div style="padding: 10px; min-width: 200px;">
-            <h3 style="margin: 0 0 8px 0; font-weight: bold;">${device.name}</h3>
-            <div style="margin-bottom: 8px;">
-              <span style="background: ${device.status === 'online' ? '#22c55e' : '#ef4444'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
-                ${device.status}
-              </span>
-            </div>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>Location:</strong> ${device.location}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>Type:</strong> ${device.type}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>Battery:</strong> ${device.battery}%</p>
-          </div>
-        `);
-
-        new mapboxgl.Marker({
-          color: device.status === 'online' ? '#22c55e' : '#ef4444'
-        })
-        .setLngLat([device.longitude, device.latitude])
-        .setPopup(popup)
-        .addTo(map.current!);
-      }
-    });
-
-    return () => {
-      map.current?.remove();
-    };
-  }, [devices]);
 
   const fetchUserRole = async () => {
     try {
@@ -118,8 +112,10 @@ const DeviceMap = () => {
         .single();
 
       const userRole = profile?.role || 'user';
+      console.log('Map - User role:', userRole);
 
       if (userRole === 'superadmin' || userRole === 'admin') {
+        // Admin and superadmin can see all devices
         const { data, error } = await supabase
           .from('devices')
           .select('*')
@@ -128,7 +124,9 @@ const DeviceMap = () => {
 
         if (error) throw error;
         devicesData = data;
+        console.log('Map - Admin devices:', devicesData);
       } else {
+        // Regular users can only see devices they have access to
         const { data: accessData, error } = await supabase
           .from('user_device_access')
           .select(`
@@ -136,12 +134,19 @@ const DeviceMap = () => {
           `)
           .eq('user_id', user.id);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Map - Error fetching user device access:', error);
+          throw error;
+        }
+
+        console.log('Map - User device access:', accessData);
         devicesData = accessData
           ?.map(access => access.devices)
           .filter(device => device && device.latitude !== null && device.longitude !== null) || [];
+        console.log('Map - User accessible devices:', devicesData);
       }
 
+      // Fetch sensors for accessible devices
       const deviceIds = devicesData?.map(d => d.id) || [];
       let sensorsData = [];
 
@@ -154,6 +159,7 @@ const DeviceMap = () => {
 
         if (sensorsError) throw sensorsError;
         sensorsData = sensors || [];
+        console.log('Map - Sensors for devices:', sensorsData);
       }
 
       setDevices(devicesData || []);
@@ -165,6 +171,50 @@ const DeviceMap = () => {
     }
   };
 
+  const getDeviceSensors = (deviceId: string) => {
+    return sensors.filter(sensor => sensor.device_id === deviceId);
+  };
+
+  // const getSensorIcon = (sensorType: string) => {
+  //   switch (sensorType.toLowerCase()) {
+  //     case 'temperature':
+  //       return <Thermometer className="h-4 w-4 text-red-500" />;
+  //     case 'humidity':
+  //       return <Droplets className="h-4 w-4 text-blue-500" />;
+  //     case 'pressure':
+  //       return <Gauge className="h-4 w-4 text-green-500" />;
+  //     default:
+  //       return <Sun className="h-4 w-4 text-gray-500" />;
+  //   }
+  // };
+  const getSensorIcon = (sensorType: string) => {
+  switch (sensorType.toLowerCase()) {
+    case 'temperature':
+      return <Thermometer className="h-4 w-4 text-red-500" />;
+    case 'humidity':
+      return <Droplets className="h-4 w-4 text-blue-500" />;
+    case 'pressure':
+      return <Gauge className="h-4 w-4 text-green-500" />;
+    case 'co2':
+      return <Cloud className="h-4 w-4 text-gray-700" />; // Abu-abu gelap untuk gas
+    case 'o2':
+      return <Heart className="h-4 w-4 text-pink-500" />; // Merah muda untuk oksigen/kehidupan
+    case 'light':
+      return <Sun className="h-4 w-4 text-yellow-500" />; // Kuning terang untuk cahaya
+    case 'curah hujan': // Diubah sesuai kunci JSON Anda
+      return <CloudRain className="h-4 w-4 text-indigo-500" />; // Biru keunguan untuk hujan
+    case 'kecepatan angin': // Diubah sesuai kunci JSON Anda
+      return <Wind className="h-4 w-4 text-teal-500" />; // Teal untuk angin
+    case 'arah angin': // Diubah sesuai kunci JSON Anda
+      return <Compass className="h-4 w-4 text-orange-500" />; // Oranye untuk arah
+    case 'ph':
+      return <TestTube className="h-4 w-4 text-purple-500" />; // Ungu untuk pH/kimia
+    default:
+      // Ikon default jika tipe sensor tidak dikenali
+      return <List className="h-4 w-4 text-gray-400" />;
+  }
+};
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -172,6 +222,12 @@ const DeviceMap = () => {
       </div>
     );
   }
+
+  // Default center to Indonesia if no devices
+  const defaultCenter: [number, number] = [-6.2088, 106.8456];
+  const mapCenter = devices.length > 0 
+    ? [devices[0].latitude, devices[0].longitude] as [number, number]
+    : defaultCenter;
 
   return (
     <div className="space-y-6">
@@ -188,7 +244,80 @@ const DeviceMap = () => {
         </CardHeader>
         <CardContent>
           <div className="h-96 rounded-lg overflow-hidden">
-            <div ref={mapContainer} style={{ height: '100%', width: '100%' }} />
+            <MapContainer
+              center={mapCenter}
+              zoom={devices.length > 0 ? 12 : 10}
+              style={{ height: '100%', width: '100%' }}
+              className="map-container"
+            >
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+              
+              {devices.map((device) => (
+                <Marker
+                  key={device.id}
+                  position={[device.latitude, device.longitude]}
+                  icon={createDeviceIcon(device.status)}
+                >
+                  <Popup>
+                    {/* MODIFIKASI 1: Tambahkan max-w-xs (max-width: 20rem / 320px) */}
+                    {/* <div className="p-2 min-w-[250px]"> */}
+                    <div className="p-2 min-w-[250px] max-w-sm">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          {/* <h3 className="font-semibold text-lg">{device.name}</h3> */}
+                          {/* MODIFIKASI 3: Tambahkan break-words untuk nama device */}
+                          <h3 className="font-semibold text-lg break-words">{device.name}</h3>
+                          <div className="flex items-center space-x-2">
+                            <Battery className="h-4 w-4" />
+                            <span className="text-sm">{device.battery}%</span>
+                          </div>
+                          <Badge variant={device.status === 'online' ? 'default' : 'secondary'}>
+                            {device.status}
+                          </Badge>
+                        </div> 
+
+                        <Separator />
+
+                        {/* Registered Sensors */}
+                        <div>
+                          <h4 className="font-medium text-sm mb-2">Registered Sensors:</h4>
+                          {/* <div className="space-y-2"> */}
+                          {/* MODIFIKASI 2: Tambahkan max-h-40 dan overflow-y-auto */}
+                          {/* <div className="space-y-2 max-h-40 overflow-y-auto"> */}
+                          <div className="space-y-1 max-h-28 overflow-y-auto pr-1"> {/* Sesuaikan max-h jika perlu, misal max-h-28 untuk sekitar 3-4 item ringkas */}
+                            {getDeviceSensors(device.id).map((sensor) => (
+                              <div key={sensor.id} className="flex items-center space-x-2 py-1 px-2 hover:bg-gray-100 rounded">
+                                {getSensorIcon(sensor.type)}
+                                {/* <div className="flex-1"> */}
+                                <div className="flex-1 min-w-0"> {/* Tambahkan min-w-0 untuk flex-1 bekerja dengan baik bersama truncate/break-words */}
+                                  {/* <p className="text-sm font-medium">{sensor.name}</p>
+                                  <p className="text-xs text-gray-500"> */}
+                                  {/* MODIFIKASI 3: Tambahkan break-words untuk nama sensor */}
+                                  <span className="text-sm text-gray-700 flex-1 truncate">{sensor.name}</span>
+                                  {/* MODIFIKASI 3: Tambahkan break-words untuk tipe sensor */}
+                                  {/* <p className="text-xs text-gray-500 break-words">
+                                    {sensor.type} ({sensor.unit})
+                                  </p> */}
+                                </div>
+                                <Badge variant={sensor.is_active ? 'default' : 'secondary'} className="text-xs">
+                                  {sensor.is_active ? 'Active' : 'Inactive'}
+                                </Badge>
+                              </div>
+                            ))}
+                            {getDeviceSensors(device.id).length === 0 && (
+                              <p className="text-xs text-gray-400 italic">No sensors registered</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
           </div>
           
           {devices.length === 0 && (

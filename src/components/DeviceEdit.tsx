@@ -18,7 +18,9 @@ const DeviceEdit = ({ device, open, onOpenChange, onDeviceUpdate }) => {
     mac: '',
     status: '',
     battery: 0,
-    description: ''
+    description: '',
+    latitude: '', // TAMBAHKAN INI
+    longitude: '', // TAMBAHKAN INI
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -34,7 +36,10 @@ const DeviceEdit = ({ device, open, onOpenChange, onDeviceUpdate }) => {
         mac: device.mac || '',
         status: device.status || 'offline',
         battery: device.battery || 0,
-        description: device.description || ''
+        description: device.description || '',
+        // Ubah nilai null/undefined menjadi string kosong, angka menjadi string
+        latitude: device.latitude === null || device.latitude === undefined ? '' : String(device.latitude),
+        longitude: device.longitude === null || device.longitude === undefined ? '' : String(device.longitude),
       });
     }
   }, [device]);
@@ -52,7 +57,8 @@ const DeviceEdit = ({ device, open, onOpenChange, onDeviceUpdate }) => {
     if (!formData.name || !formData.type || !formData.location || !formData.serial || !formData.mac) {
       toast({
         title: "Error",
-        description: "All required fields must be filled",
+        // description: "All required fields must be filled",
+        description: "Semua field yang wajib (selain deskripsi, latitude, longitude) harus diisi",
         variant: "destructive",
       });
       return;
@@ -60,19 +66,52 @@ const DeviceEdit = ({ device, open, onOpenChange, onDeviceUpdate }) => {
 
     setLoading(true);
     try {
+      let lat: number | null = null;
+      if (formData.latitude !== '') {
+        const parsedLat = parseFloat(formData.latitude);
+        if (isNaN(parsedLat)) {
+          toast({ title: "Error", description: "Nilai Latitude tidak valid. Masukkan angka atau kosongkan.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        lat = parsedLat;
+      }
+
+      let lon: number | null = null;
+      if (formData.longitude !== '') {
+        const parsedLon = parseFloat(formData.longitude);
+        if (isNaN(parsedLon)) {
+          toast({ title: "Error", description: "Nilai Longitude tidak valid. Masukkan angka atau kosongkan.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        lon = parsedLon;
+      }
+
+      const batteryLevel = parseInt(String(formData.battery), 10);
+      if (isNaN(batteryLevel) || batteryLevel < 0 || batteryLevel > 100) {
+        toast({ title: "Error", description: "Level Baterai tidak valid. Harus antara 0 dan 100.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      const updatePayload = {
+        name: formData.name,
+        type: formData.type,
+        location: formData.location,
+        serial: formData.serial,
+        mac: formData.mac,
+        status: formData.status,
+        battery: batteryLevel,
+        description: formData.description,
+        latitude: lat, // Gunakan nilai yang sudah diparsing
+        longitude: lon, // Gunakan nilai yang sudah diparsing
+        updated_at: new Date().toISOString()
+      };
+
       const { data, error } = await supabase
         .from('devices')
-        .update({
-          name: formData.name,
-          type: formData.type,
-          location: formData.location,
-          serial: formData.serial,
-          mac: formData.mac,
-          status: formData.status,
-          battery: formData.battery,
-          description: formData.description,
-          updated_at: new Date().toISOString()
-        })
+        .update(updatePayload)
         .eq('id', device.id)
         .select();
 
@@ -107,7 +146,7 @@ const DeviceEdit = ({ device, open, onOpenChange, onDeviceUpdate }) => {
           <DialogDescription>Update the details for this device</DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2"> {/* Tambahkan max-height dan overflow */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Device Name</Label>
@@ -154,6 +193,18 @@ const DeviceEdit = ({ device, open, onOpenChange, onDeviceUpdate }) => {
                 onChange={handleChange}
                 placeholder="SN12345678"
               />
+            </div>
+          </div>
+
+          {/* TAMBAHKAN INPUT LATITUDE DAN LONGITUDE DI SINI */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="latitude">Latitude</Label>
+              <Input id="latitude" type="number" step="any" value={formData.latitude} onChange={handleChange} placeholder="e.g., -6.2088"/>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="longitude">Longitude</Label>
+              <Input id="longitude" type="number" step="any" value={formData.longitude} onChange={handleChange} placeholder="e.g., 106.8456"/>
             </div>
           </div>
           

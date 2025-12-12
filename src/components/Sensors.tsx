@@ -39,33 +39,43 @@ const Sensors = () => {
   const currentSensors = sensors.slice(startIndex, endIndex);
   
   const sensorTypes = [
+    // Environmental Sensors
     'Temperature',
-    'Humidity', 
+    'Humidity',
     'Pressure',
-    'Light',
-    'Motion',
-    'Sound',
+    
+    // Air Quality Sensors
     'CO2',
+    'O2',
+    'Light',
+    
+    // Weather Sensors
+    'Curah Hujan',
+    'Kecepatan Angin',
+    'Arah Angin',
+    
+    // Water Quality
     'pH',
-    'Voltage',
-    'Current',
-    'Distance',
-    'Vibration'
+    // Water Level
+    'Ketinggian Air',
+    
+    // Power Management
+    'Battery'
   ];
 
   const units = {
     'Temperature': ['°C', '°F', 'K'],
     'Humidity': ['%'],
-    'Pressure': ['Pa', 'hPa', 'bar', 'mmHg'],
-    'Light': ['lux', 'lm'],
-    'Motion': ['boolean'],
-    'Sound': ['dB'],
+    'Pressure': ['hPa', 'bar', 'mmHg'],
+    'Light': ['lux'],
     'CO2': ['ppm'],
+    'O2': ['%'],
     'pH': ['pH'],
-    'Voltage': ['V', 'mV'],
-    'Current': ['A', 'mA'],
-    'Distance': ['m', 'cm', 'mm'],
-    'Vibration': ['g', 'm/s²']
+    'Ketinggian Air': ['cm'],
+    'Battery': ['%'],
+    'Curah Hujan': ['mm'],
+    'Kecepatan Angin': ['m/s', 'km/h'],
+    'Arah Angin': ['°', 'N/S/E/W']
   };
 
   useEffect(() => {

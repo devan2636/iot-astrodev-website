@@ -32,7 +32,7 @@ const About = ({ user }: AboutProps) => {
     version: '1.0.0',
     developer: 'Astrodev Team',
     company: 'Lovable x Astrodev',
-    contact_email: 'info@astrodev.com',
+    contact_email: 'devandrisuherman9@gmail.com',
     website: 'https://astrodev.com',
     copyright: 'Copyright © 2025 Lovable x Astrodev. All rights reserved.'
   });
@@ -228,6 +228,15 @@ const About = ({ user }: AboutProps) => {
             </div>
           ) : (
             <div className="space-y-6">
+              {/* === BAGIAN LOGO YANG DITAMBAHKAN === */}
+              <div className="flex justify-center py-4">
+                <img 
+                  src="/logo-astrodev.png" 
+                  alt="Astrodev Logo" 
+                  className="h-32 w-32 object-contain"
+                />
+              </div>
+              {/* === AKHIR BAGIAN LOGO === */}
               <div>
                 <h3 className="text-lg font-semibold mb-2">Deskripsi</h3>
                 <p className="text-gray-600">{aboutData.description}</p>

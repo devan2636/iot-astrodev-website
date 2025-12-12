@@ -15,27 +15,70 @@ import DeviceMap from './DeviceMap';
 import DevicePagination from './DevicePagination';
 import ErrorBoundary from './ErrorBoundary';
 
-const Devices = () => {
-  const [devices, setDevices] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [selectedDevice, setSelectedDevice] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [userRole, setUserRole] = useState('user');
-  const [newDevice, setNewDevice] = useState({
+interface Device {
+  id: string;
+  name: string;
+  type: string;
+  location: string;
+  serial: string;
+  mac: string;
+  description: string;
+  status: string;
+  battery: number;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+interface NewDevice {
+  name: string;
+  type: string;
+  location: string;
+  serial: string; // Masih ada di interface tapi tidak diinput user
+  mac: string;
+  description: string;
+  latitude: string;
+  longitude: string;
+}
+
+const Devices: React.FC = () => {
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState<boolean>(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
+  const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [userRole, setUserRole] = useState<string>('user');
+  
+  // Serial number diinisialisasi kosong, nanti digenerate saat submit
+  const [newDevice, setNewDevice] = useState<NewDevice>({
     name: '',
     type: '',
     location: '',
     serial: '',
     mac: '',
-    description: ''
+    description: '',
+    latitude: '',
+    longitude: ''
   });
 
   const { toast } = useToast();
-  const deviceTypes = ['Temperature', 'Humidity', 'Controller', 'Sensor', 'Gateway'];
+  const deviceTypes = [
+    'Temperature Sensor',
+    'Humidity Sensor',
+    'Pressure Sensor',
+    'CO2 Sensor',
+    'O2 Sensor',
+    'Light Sensor',
+    'Rain Sensor',
+    'Wind Sensor',
+    'pH Sensor',
+    'Gateway',
+    'Controller',
+    'Sensor Node (SN)',
+    'Sensor Node (CH)'
+  ];
   const itemsPerPage = 5;
 
   // Calculate pagination
@@ -75,8 +118,6 @@ const Devices = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      console.log('Fetching devices for user:', user.id);
-
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
@@ -84,7 +125,6 @@ const Devices = () => {
         .single();
 
       const userRole = profile?.role || 'user';
-      console.log('User role in devices:', userRole);
 
       let data;
       if (userRole === 'superadmin' || userRole === 'admin') {
@@ -96,7 +136,6 @@ const Devices = () => {
 
         if (error) throw error;
         data = allDevices;
-        console.log('Admin devices:', data);
       } else {
         // Regular users can only see devices they have access to
         const { data: accessData, error } = await supabase
@@ -106,14 +145,9 @@ const Devices = () => {
           `)
           .eq('user_id', user.id);
 
-        if (error) {
-          console.error('Error fetching user device access in devices:', error);
-          throw error;
-        }
+        if (error) throw error;
 
-        console.log('User device access in devices:', accessData);
         data = accessData?.map(access => access.devices).filter(device => device !== null) || [];
-        console.log('User accessible devices in devices page:', data);
       }
 
       setDevices(data || []);
@@ -132,7 +166,6 @@ const Devices = () => {
   const refreshDeviceStatus = async () => {
     try {
       setRefreshing(true);
-      console.log('Manual refresh device status...');
       
       const { data, error } = await supabase.functions.invoke('update-device-status');
       
@@ -144,11 +177,7 @@ const Devices = () => {
           variant: "destructive",
         });
       } else {
-        console.log('Device status updated:', data);
-        
-        // Refresh device list after status update
         await fetchDevices();
-        
         toast({
           title: "Status Updated",
           description: `Updated ${data?.offline_count || 0} offline dan ${data?.online_count || 0} online devices`,
@@ -166,8 +195,21 @@ const Devices = () => {
     }
   };
 
+  // --- Helper Function: Generate Serial Number ---
+  const generateSerialNumber = () => {
+    const now = new Date();
+    // Format: SN + 2 digit Tahun + 2 digit Bulan + - + 5 karakter acak uppercase
+    // Contoh output: SN2511-X7Z9A
+    const year = now.getFullYear().toString().slice(-2);
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const randomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+    
+    return `SN${year}${month}-${randomCode}`;
+  };
+
   const handleAddDevice = async () => {
-    if (!newDevice.name || !newDevice.type || !newDevice.location || !newDevice.serial || !newDevice.mac) {
+    // Validasi: Serial Number dihapus dari pengecekan karena auto-generate
+    if (!newDevice.name || !newDevice.type || !newDevice.location || !newDevice.mac) {
       toast({
         title: "Error",
         description: "Semua field wajib diisi",
@@ -176,16 +218,39 @@ const Devices = () => {
       return;
     }
 
+    if (newDevice.latitude && (isNaN(Number(newDevice.latitude)) || Number(newDevice.latitude) < -90 || Number(newDevice.latitude) > 90)) {
+      toast({
+        title: "Error",
+        description: "Latitude harus berupa angka antara -90 dan 90",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newDevice.longitude && (isNaN(Number(newDevice.longitude)) || Number(newDevice.longitude) < -180 || Number(newDevice.longitude) > 180)) {
+      toast({
+        title: "Error",
+        description: "Longitude harus berupa angka antara -180 dan 180",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
+      // Generate Serial Number Otomatis
+      const autoGeneratedSerial = generateSerialNumber();
+
       const { data, error } = await supabase
         .from('devices')
         .insert({
           name: newDevice.name,
           type: newDevice.type,
           location: newDevice.location,
-          serial: newDevice.serial,
+          serial: autoGeneratedSerial, // Gunakan hasil generate
           mac: newDevice.mac,
           description: newDevice.description,
+          latitude: newDevice.latitude ? Number(newDevice.latitude) : null,
+          longitude: newDevice.longitude ? Number(newDevice.longitude) : null,
           status: 'offline',
           battery: 100
         })
@@ -196,12 +261,21 @@ const Devices = () => {
       }
 
       setDevices([data[0], ...devices]);
-      setNewDevice({ name: '', type: '', location: '', serial: '', mac: '', description: '' });
+      setNewDevice({ 
+        name: '', 
+        type: '', 
+        location: '', 
+        serial: '', 
+        mac: '', 
+        description: '',
+        latitude: '',
+        longitude: ''
+      });
       setIsAddDialogOpen(false);
       
       toast({
         title: "Device Berhasil Ditambahkan",
-        description: `${newDevice.name} telah ditambahkan ke sistem`,
+        description: `${newDevice.name} dengan Serial ${autoGeneratedSerial} telah ditambahkan`,
       });
     } catch (error) {
       console.error('Error adding device:', error);
@@ -213,21 +287,21 @@ const Devices = () => {
     }
   };
 
-  const handleViewDetails = (device) => {
+  const handleViewDetails = (device: Device) => {
     setSelectedDevice(device);
     setIsDetailsOpen(true);
   };
 
-  const handleEdit = (device) => {
+  const handleEdit = (device: Device) => {
     setSelectedDevice(device);
     setIsEditOpen(true);
   };
 
-  const handleDeviceUpdate = (updatedDevice) => {
+  const handleDeviceUpdate = (updatedDevice: Device) => {
     setDevices(devices.map(device => 
       device.id === updatedDevice.id ? updatedDevice : device
     ));
-    fetchDevices(); // Refetch to ensure we have the latest data
+    fetchDevices();
   };
 
   const canManageDevices = userRole === 'admin' || userRole === 'superadmin';
@@ -263,7 +337,7 @@ const Devices = () => {
                 <DialogHeader>
                   <DialogTitle>Register New Device</DialogTitle>
                   <DialogDescription>
-                    Masukkan detail device IoT baru Anda
+                    Masukkan detail device IoT baru Anda (Serial Number akan digenerate otomatis)
                   </DialogDescription>
                 </DialogHeader>
                 
@@ -293,26 +367,18 @@ const Devices = () => {
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="location">Location</Label>
-                      <Input
-                        id="location"
-                        placeholder="Building A, Room 101"
-                        value={newDevice.location}
-                        onChange={(e) => setNewDevice({...newDevice, location: e.target.value})}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="serial">Serial Number</Label>
-                      <Input
-                        id="serial"
-                        placeholder="SN12345678"
-                        value={newDevice.serial}
-                        onChange={(e) => setNewDevice({...newDevice, serial: e.target.value})}
-                      />
-                    </div>
+                  {/* Location sekarang Full Width karena Serial dihapus */}
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      placeholder="Building A, Room 101"
+                      value={newDevice.location}
+                      onChange={(e) => setNewDevice({...newDevice, location: e.target.value})}
+                    />
                   </div>
+                  
+                  {/* Serial Number Input REMOVED here */}
                   
                   <div className="space-y-2">
                     <Label htmlFor="mac">MAC Address</Label>
@@ -325,6 +391,33 @@ const Devices = () => {
                     <p className="text-xs text-gray-500">Format: XX:XX:XX:XX:XX:XX</p>
                   </div>
                   
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="latitude">Latitude</Label>
+                      <Input
+                        id="latitude"
+                        type="number"
+                        step="any"
+                        placeholder="-6.2088"
+                        value={newDevice.latitude}
+                        onChange={(e) => setNewDevice({...newDevice, latitude: e.target.value})}
+                      />
+                      <p className="text-xs text-gray-500">Antara -90 dan 90</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="longitude">Longitude</Label>
+                      <Input
+                        id="longitude"
+                        type="number"
+                        step="any"
+                        placeholder="106.8456"
+                        value={newDevice.longitude}
+                        onChange={(e) => setNewDevice({...newDevice, longitude: e.target.value})}
+                      />
+                      <p className="text-xs text-gray-500">Antara -180 dan 180</p>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="description">Description (Optional)</Label>
                     <Textarea

@@ -78,13 +78,18 @@ const SensorChart: React.FC<SensorChartProps> = ({ sensor, onClose }) => {
           const legacyValue = reading[sensorFieldName];
           const value = jsonValue !== undefined ? jsonValue : legacyValue;
           
+          const date = new Date(reading.timestamp);
+          const formattedTime = date.toLocaleString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit',
+            ...(timeRange === '7d' ? {
+              day: '2-digit',
+              month: '2-digit'
+            } : {})
+          });
+          
           return {
-            timestamp: new Date(reading.timestamp).toLocaleTimeString('id-ID', { 
-              hour: '2-digit', 
-              minute: '2-digit',
-              month: 'short',
-              day: 'numeric'
-            }),
+            timestamp: formattedTime,
             value: parseFloat(value),
             rawTimestamp: reading.timestamp,
             fullReading: reading
@@ -282,7 +287,8 @@ const SensorChart: React.FC<SensorChartProps> = ({ sensor, onClose }) => {
             </div>
           ) : (
             <ChartContainer config={chartConfig} className="h-64 mb-6">
-              <LineChart data={chartData}>
+              {/* <LineChart data={chartData}> */}
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
                   dataKey="timestamp" 
@@ -290,6 +296,7 @@ const SensorChart: React.FC<SensorChartProps> = ({ sensor, onClose }) => {
                   angle={-45}
                   textAnchor="end"
                   height={60}
+                  domain={['dataMin', 'dataMax']} // Tambahkan baris ini
                 />
                 <YAxis 
                   tick={{ fontSize: 12 }}
@@ -324,7 +331,13 @@ const SensorChart: React.FC<SensorChartProps> = ({ sensor, onClose }) => {
                   {currentReadings.map((reading, index) => (
                     <TableRow key={index}>
                       <TableCell>
-                        {new Date(reading.rawTimestamp).toLocaleString('id-ID')}
+                        {new Date(reading.rawTimestamp).toLocaleString('id-ID', {
+                          timeZone: 'UTC', // <--- Tambahkan baris ini juga agar tabel sinkron
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          day: '2-digit',
+                          month: '2-digit'
+                        })}
                       </TableCell>
                       <TableCell className="font-mono">
                         {reading.value?.toFixed(2)}
