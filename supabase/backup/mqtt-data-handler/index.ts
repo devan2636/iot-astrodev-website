@@ -187,45 +187,52 @@ serve(async (req) => {
         console.log('[SAVED, mqtt-data-handler] Sensor data saved for device:', deviceId);
 
         // Send sensor data notification to Telegram
-        console.log('[DEBUG] Mempersiapkan panggilan ke telegram-notification untuk event: sensor_update');
+        console.log('[DEBUG] Preparing telegram notification for sensor_update event');
         try {
-          const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telegram-notifications`;
+          const supabaseUrl = Deno.env.get('SUPABASE_URL');
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+          
+          if (!supabaseUrl || !supabaseKey) {
+            console.error('[ERROR] Supabase credentials missing');
+            throw new Error('Supabase configuration missing');
+          }
+          
+          const url = `${supabaseUrl}/functions/v1/telegram-notifications`;
           
           const payloadUntukTelegram = {
             device_id: deviceId,
             event: 'sensor_update',
             sensor_data: {
-              // Kirim data terkalibrasi (bukan raw)
               temperature: calibratedData.temperature,
               humidity: calibratedData.humidity,
               pressure: calibratedData.pressure,
               ketinggian_air: calibratedData.ketinggian_air,
-              curah_hujan: calibratedData.curah_hujan
+              curah_hujan: calibratedData.curah_hujan,
+              timestamp: insertTimestamp
             }
           };
 
-          console.log(`[DEBUG] Memanggil URL: ${url}`);
-          console.log(`[DEBUG] Mengirim Body: ${JSON.stringify(payloadUntukTelegram)}`);
+          console.log(`[TELEGRAM] Invoking telegram-notifications function`);
+          console.log(`[TELEGRAM] Payload:`, JSON.stringify(payloadUntukTelegram));
 
           const telegramResponse = await fetch(url, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+              'Authorization': `Bearer ${supabaseKey}`
             },
             body: JSON.stringify(payloadUntukTelegram)
           });
 
-          console.log(`[DEBUG] Panggilan fetch selesai. Status Respons: ${telegramResponse.status}`);
+          const responseText = await telegramResponse.text();
+          console.log(`[TELEGRAM] Response Status: ${telegramResponse.status}`);
+          console.log(`[TELEGRAM] Response Body:`, responseText);
           
           if (!telegramResponse.ok) {
-            const errorText = await telegramResponse.text();
-            console.error(`[ERROR] Respons dari telegram-notification tidak OK (${telegramResponse.status}):`, errorText);
-          } else {
-            console.log('[SUCCESS] Panggilan ke telegram-notification berhasil diproses.');
+            console.error(`[TELEGRAM_ERROR] Request failed with status ${telegramResponse.status}`);
           }
         } catch (error) {
-          console.error('[FATAL] Gagal total saat mencoba memanggil telegram-notification:', error);
+          console.error('[TELEGRAM_FATAL]', error.message);
         }
       }
       
@@ -272,32 +279,44 @@ serve(async (req) => {
         console.log('[SAVED, mqtt-data-handler] Device status saved for device:', deviceId);
 
         // Send notification to Telegram (Status Update)
-        console.log('[DEBUG] Mempersiapkan panggilan ke telegram-notification untuk event: status_update');
+        console.log('[DEBUG] Preparing telegram notification for status_update event');
         try {
-          const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telegram-notifications`;
+          const supabaseUrl = Deno.env.get('SUPABASE_URL');
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+          
+          if (!supabaseUrl || !supabaseKey) {
+            console.error('[ERROR] Supabase credentials missing');
+            throw new Error('Supabase configuration missing');
+          }
+          
+          const url = `${supabaseUrl}/functions/v1/telegram-notifications`;
           const payloadUntukTelegram = {
             device_id: deviceId,
             event: 'status_update',
             sensor_data: statusData 
           };
           
+          console.log(`[TELEGRAM] Invoking telegram-notifications function`);
+          console.log(`[TELEGRAM] Payload:`, JSON.stringify(payloadUntukTelegram));
+          
           const telegramResponse = await fetch(url, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+              'Authorization': `Bearer ${supabaseKey}`
             },
             body: JSON.stringify(payloadUntukTelegram)
           });
 
+          const responseText = await telegramResponse.text();
+          console.log(`[TELEGRAM] Response Status: ${telegramResponse.status}`);
+          console.log(`[TELEGRAM] Response Body:`, responseText);
+
           if (!telegramResponse.ok) {
-            const errorText = await telegramResponse.text();
-            console.error(`[ERROR] Respons dari telegram-notification tidak OK (${telegramResponse.status}):`, errorText);
-          } else {
-            console.log('[SUCCESS] Panggilan ke telegram-notification berhasil diproses.');
+            console.error(`[TELEGRAM_ERROR] Request failed with status ${telegramResponse.status}`);
           }
         } catch (error) {
-          console.error('[FATAL] Gagal total saat mencoba memanggil telegram-notification:', error);
+          console.error('[TELEGRAM_FATAL]', error.message);
         }
       }
 
@@ -368,27 +387,42 @@ serve(async (req) => {
 
       // Send notification to Telegram
       try {
-        const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telegram-notifications`;
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        if (!supabaseUrl || !supabaseKey) {
+          console.error('[ERROR] Supabase credentials missing');
+          throw new Error('Supabase configuration missing');
+        }
+        
+        const url = `${supabaseUrl}/functions/v1/telegram-notifications`;
         const payloadUntukTelegram = {
           device_id: deviceId,
           event: 'status_update',
           sensor_data: statusData
         };
         
+        console.log(`[TELEGRAM] Invoking telegram-notifications function`);
+        console.log(`[TELEGRAM] Payload:`, JSON.stringify(payloadUntukTelegram));
+        
         const telegramResponse = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+            'Authorization': `Bearer ${supabaseKey}`
           },
           body: JSON.stringify(payloadUntukTelegram)
         });
 
+        const responseText = await telegramResponse.text();
+        console.log(`[TELEGRAM] Response Status: ${telegramResponse.status}`);
+        console.log(`[TELEGRAM] Response Body:`, responseText);
+
         if (!telegramResponse.ok) {
-          console.error(`[ERROR] Telegram notification failed: ${telegramResponse.status}`);
+          console.error(`[TELEGRAM_ERROR] Request failed with status ${telegramResponse.status}`);
         }
       } catch (error) {
-        console.error('[FATAL] Telegram call failed:', error);
+        console.error('[TELEGRAM_FATAL]', error.message);
       }
     }
 

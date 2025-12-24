@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import paho.mqtt.client as mqtt
 import json
 import random
@@ -19,25 +20,25 @@ DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 # --- DEFINISI SKENARIO ---
 SCENARIOS = {
     "NORMAL": {
-        "desc": "✅ AMAN (Air Rendah, Cerah)",
+        "desc": "[OK] AMAN (Air Rendah, Cerah)",
         "water_range": (5.0, 19.0),
         "rain_range": (0.0, 0.0),
         "batt_range": (80, 100)
     },
     "WASPADA": {
-        "desc": "⚠️ WASPADA (Air Sedang, Hujan Ringan)",
+        "desc": "[!] WASPADA (Air Sedang, Hujan Ringan)",
         "water_range": (20.5, 39.5),
         "rain_range": (1.0, 5.0),
         "batt_range": (60, 80)
     },
     "BAHAYA": {
-        "desc": "🚨 BAHAYA (Banjir, Hujan Deras)",
+        "desc": "[!!] BAHAYA (Banjir, Hujan Deras)",
         "water_range": (41.0, 65.0),
         "rain_range": (10.0, 20.0),
         "batt_range": (40, 60)
     },
     "EXTREME_WEATHER": {
-        "desc": "⛈️ CUACA EKSTREM (Air Normal, Hujan Badai)",
+        "desc": "[!!!] CUACA EKSTREM (Air Normal, Hujan Badai)",
         "water_range": (10.0, 18.0),
         "rain_range": (25.0, 50.0),
         "batt_range": (50, 70)
@@ -66,22 +67,22 @@ class DeviceManualTrigger:
         if rc == 0:
             self.connected = True
             self.reconnect_count = 0
-            print("✅ MQTT Connected successfully!")
+            print("[OK] MQTT Connected successfully!")
         else:
             self.connected = False
-            print(f"❌ MQTT Connection failed with code {rc}")
+            print("[ERROR] MQTT Connection failed with code {}".format(rc))
 
     def on_disconnect(self, client, userdata, rc, properties=None):
         self.connected = False
         if rc != 0:
-            print(f"⚠️ Unexpected disconnection ({rc}). Attempting to reconnect...")
+            print("[WARN] Unexpected disconnection ({}). Attempting to reconnect...".format(rc))
         else:
-            print("🔌 Disconnected from MQTT broker")
+            print("[INFO] Disconnected from MQTT broker")
 
     def connect(self) -> bool:
         """Connect to MQTT broker with retry logic"""
         try:
-            print(f"🔗 Connecting to {MQTT_BROKER}:{MQTT_PORT}...")
+            print("[INFO] Connecting to {}:{}...".format(MQTT_BROKER, MQTT_PORT))
             self.client.connect(MQTT_BROKER, MQTT_PORT, 60)
             self.client.loop_start()
             
@@ -89,33 +90,33 @@ class DeviceManualTrigger:
             for i in range(10):
                 time.sleep(0.5)
                 if self.connected:
-                    print("✅ Connected!")
+                    print("[OK] Connected!")
                     return True
             
             if not self.connected:
-                print("❌ Connection timeout. Check broker address and credentials.")
+                print("[ERROR] Connection timeout. Check broker address and credentials.")
                 return False
                 
         except ConnectionRefusedError:
-            print(f"❌ Connection refused. Is MQTT broker running at {MQTT_BROKER}:{MQTT_PORT}?")
+            print("[ERROR] Connection refused. Is MQTT broker running at {}:{}?".format(MQTT_BROKER, MQTT_PORT))
             return False
         except Exception as e:
-            print(f"❌ Connection Error: {type(e).__name__}: {e}")
+            print("[ERROR] Connection Error: {}: {}".format(type(e).__name__, e))
             return False
 
     def disconnect(self):
         """Safely disconnect from MQTT"""
         if self.connected:
-            print("🔌 Disconnecting...")
+            print("[INFO] Disconnecting...")
             self.client.loop_stop()
             self.client.disconnect()
             time.sleep(1)
-            print("✅ Disconnected")
+            print("[OK] Disconnected")
 
     def get_simulated_values(self, scenario_key: str) -> Tuple[float, float, int]:
         """Generate simulated sensor values based on scenario"""
         if scenario_key not in SCENARIOS:
-            raise ValueError(f"Unknown scenario: {scenario_key}")
+            raise ValueError("Unknown scenario: {}".format(scenario_key))
         
         scenario = SCENARIOS[scenario_key]
         water = round(random.uniform(*scenario["water_range"]), 2)
@@ -127,11 +128,11 @@ class DeviceManualTrigger:
     def send_data(self, device_index: int) -> bool:
         """Send MQTT data for selected device"""
         if not self.connected:
-            print("❌ Not connected to MQTT broker!")
+            print("[ERROR] Not connected to MQTT broker!")
             return False
             
         if device_index < 0 or device_index >= len(DEVICES):
-            print("❌ Invalid Selection!")
+            print("[ERROR] Invalid Selection!")
             return False
 
         try:
@@ -167,63 +168,64 @@ class DeviceManualTrigger:
             }
 
             # 5. Topik
-            topic_data = f"iot/devices/{dev['id']}/data"
-            topic_status = f"iot/devices/{dev['id']}/status"
+            topic_data = "iot/devices/{}/data".format(dev['id'])
+            topic_status = "iot/devices/{}/status".format(dev['id'])
 
             # 6. Publish
-            print(f"\n📤 Mengirim ke {dev['name']}...")
+            print("\n[SEND] Sending to {}...".format(dev['name']))
 
             # Kirim ke topik data
             info_data = self.client.publish(topic_data, json.dumps(sensor_payload))
             if info_data.rc != mqtt.MQTT_ERR_SUCCESS:
-                print(f"   ❌ Failed to publish to {topic_data}")
+                print("   [ERROR] Failed to publish to {}".format(topic_data))
                 return False
 
             # Kirim ke topik status
             info_status = self.client.publish(topic_status, json.dumps(status_payload), retain=True)
             if info_status.rc != mqtt.MQTT_ERR_SUCCESS:
-                print(f"   ❌ Failed to publish to {topic_status}")
+                print("   [ERROR] Failed to publish to {}".format(topic_status))
                 return False
 
-            print(f"   🌊 Water: {water} cm | 🌧 Rain: {rain} mm")
-            print(f"   🔋 Batt: {battery}% | 📶 RSSI: {wifi_rssi} dBm | ⏱️ Uptime: {dev['uptime']}s")
-            print(f"   📍 DeviceID: {dev['id']}")
-            print("✅ Berhasil! Data telah dikirim ke MQTT broker.\n")
+            print("   Water: {} cm | Rain: {} mm".format(water, rain))
+            print("   Battery: {}% | RSSI: {} dBm | Uptime: {}s".format(battery, wifi_rssi, dev["uptime"]))
+            print("   DeviceID: {}".format(dev['id']))
+            print("[OK] Data sent to MQTT broker!\n")
             
             if DEBUG:
-                print(f"[DEBUG] Sensor payload: {sensor_payload}")
-                print(f"[DEBUG] Status payload: {status_payload}\n")
+                print("[DEBUG] Sensor payload: {}".format(sensor_payload))
+                print("[DEBUG] Status payload: {}\n".format(status_payload))
             
             return True
             
         except Exception as e:
-            print(f"❌ Error sending data: {type(e).__name__}: {e}")
+            print("[ERROR] Error sending data: {}: {}".format(type(e).__name__, e))
             return False
 
     def show_menu(self):
         """Interactive menu for device selection and testing"""
         while True:
             try:
-                print("="*60)
-                print("   🎛️  ASTRODEV CONTROL PANEL - AWLR MQTT SIMULATOR")
-                print("="*60)
-                print(f"   Status: {'🟢 Connected' if self.connected else '🔴 Disconnected'}")
-                print(f"   Broker: {MQTT_BROKER}:{MQTT_PORT}")
-                print("="*60)
+                print("=" * 70)
+                print("   ASTRODEV CONTROL PANEL - AWLR MQTT SIMULATOR")
+                print("=" * 70)
+                status_text = "[CONNECTED]" if self.connected else "[DISCONNECTED]"
+                print("   Status: {}".format(status_text))
+                print("   Broker: {}:{}".format(MQTT_BROKER, MQTT_PORT))
+                print("=" * 70)
                 
                 for i, dev in enumerate(DEVICES):
                     sc_desc = SCENARIOS[dev['scenario']]['desc']
-                    print(f"[{i+1}] {dev['name']:<30} -> {sc_desc}")
+                    print("[{}] {:<30} -> {}".format(i+1, dev['name'], sc_desc))
                 
                 print("[A] Send ALL devices")
                 print("[R] Reconnect")
                 print("[0] Exit")
-                print("-" * 60)
+                print("-" * 70)
 
-                choice = input("Pilih Device: ").strip().upper()
+                choice = input("Select Device: ").strip().upper()
                 
                 if choice == '0':
-                    print("Keluar...")
+                    print("Exiting...")
                     break
                 elif choice == 'R':
                     self.disconnect()
@@ -231,7 +233,7 @@ class DeviceManualTrigger:
                     if not self.connect():
                         print("Failed to reconnect. Please check your configuration.")
                 elif choice == 'A':
-                    print("\n📤 Sending data to ALL devices...")
+                    print("\n[INFO] Sending data to ALL devices...")
                     for idx in range(len(DEVICES)):
                         self.send_data(idx)
                         time.sleep(1)
@@ -240,7 +242,7 @@ class DeviceManualTrigger:
                         idx = int(choice) - 1
                         self.send_data(idx)
                     except ValueError:
-                        print("❌ Invalid input. Please enter a number.")
+                        print("[ERROR] Invalid input. Please enter a number.")
                 
                 if choice not in ['0', 'R']:
                     input("Press Enter to continue...")
@@ -249,24 +251,29 @@ class DeviceManualTrigger:
                 print("\n\nInterrupted by user.")
                 break
             except Exception as e:
-                print(f"❌ Menu error: {e}")
+                print("[ERROR] Menu error: {}".format(e))
                 continue
 
     def run(self):
         """Main entry point"""
-        print("\n" + "="*60)
-        print("   🌊 AWLR MQTT Dummy Sensor Simulator")
-        print("="*60 + "\n")
+        print("\n" + "=" * 70)
+        print("   AWLR MQTT Dummy Sensor Simulator")
+        print("=" * 70 + "\n")
         
         if not self.connect():
-            print("\n❌ Failed to connect to MQTT broker.")
-            print(f"Make sure:")
-            print(f"  - Broker is running at {MQTT_BROKER}:{MQTT_PORT}")
-            print(f"  - Username: {MQTT_USERNAME}")
-            print(f"  - Network connectivity is OK")
+            print("\n[ERROR] Failed to connect to MQTT broker.")
+            print("Make sure:")
+            print("  - Broker is running at {}:{}".format(MQTT_BROKER, MQTT_PORT))
+            print("  - Username: {}".format(MQTT_USERNAME))
+            print("  - Network connectivity is OK")
             return
         
         try:
             self.show_menu()
         finally:
             self.disconnect()
+
+
+if __name__ == "__main__":
+    app = DeviceManualTrigger()
+    app.run()
