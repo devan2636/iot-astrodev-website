@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/integrations/supabase/client';
-import { Bot, Waves, ExternalLink, Smartphone, Signal } from 'lucide-react'; // Import icons baru
+import { Bot, Waves, ExternalLink, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import AdminUserTable from './AdminUserTable';
 import UserDeviceAccessManager from './UserDeviceAccessManager';
@@ -46,12 +46,21 @@ const Settings = ({ user }: SettingsProps) => {
 
   const [userProfile, setUserProfile] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('user');
+  const [riverSubscribers, setRiverSubscribers] = useState<any[]>([]);
+  const [deviceSubscribers, setDeviceSubscribers] = useState<any[]>([]);
+  const [riverPage, setRiverPage] = useState(1);
+  const [devicePage, setDevicePage] = useState(1);
+  const itemsPerPage = 3;
+  const [isEditingDevice, setIsEditingDevice] = useState(false);
+  const [editingDeviceSubscription, setEditingDeviceSubscription] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     if (user) {
       fetchUserProfile();
       fetchUserSession();
+      fetchRiverSubscribers();
+      fetchDeviceSubscribers();
     }
   }, [user]);
 
@@ -73,14 +82,19 @@ const Settings = ({ user }: SettingsProps) => {
 
   const fetchUserProfile = async () => {
     try {
+      console.log('Fetching user profile for user ID:', user.id);
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error && error.code !== 'PGRST116') {
+        console.error('Profile fetch error:', error);
+        throw error;
+      }
 
+      console.log('User profile data:', data);
       if (data) {
         setUserProfile(data);
         setUserRole(data.role || 'user');
@@ -92,6 +106,130 @@ const Settings = ({ user }: SettingsProps) => {
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
+    }
+  };
+
+  const fetchRiverSubscribers = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('telegram_subscribers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('River fetch error:', error);
+        throw error;
+      }
+
+      console.log('River subscribers data:', data);
+      if (data) {
+        setRiverSubscribers(data);
+      }
+    } catch (error) {
+      console.error('Error fetching river subscribers:', error);
+    }
+  };
+
+  const fetchDeviceSubscribers = async () => {
+    try {
+      console.log('Fetching device subscribers...');
+      const { data, error } = await (supabase as any)
+        .from('telegram_device_subscriptions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Device fetch error:', error);
+        throw error;
+      }
+
+      console.log('Device subscribers raw data:', data);
+      console.log('Device subscribers count:', data?.length || 0);
+      
+      if (!data || data.length === 0) {
+        console.log('No device subscribers found, setting empty array');
+        setDeviceSubscribers([]);
+        return;
+      }
+
+      // Fetch device names separately
+      const deviceIds = [...new Set(data.map((sub: any) => sub.device_id))];
+      console.log('Device IDs to fetch:', deviceIds);
+      
+      if (deviceIds.length > 0) {
+        const { data: devices, error: devError } = await supabase
+          .from('devices')
+          .select('id, name');
+        
+        console.log('Devices fetch result:', devices, devError);
+        
+        if (!devError && devices) {
+          const deviceMap = new Map(devices.map((d: any) => [d.id, d]));
+          const enrichedData = data.map((sub: any) => ({
+            ...sub,
+            devices: deviceMap.get(sub.device_id) || { id: sub.device_id, name: 'Unknown Device' },
+          }));
+          console.log('Enriched device subscribers:', enrichedData);
+          setDeviceSubscribers(enrichedData);
+        } else {
+          console.log('Setting device subscribers without enrichment');
+          setDeviceSubscribers(data);
+        }
+      } else {
+        setDeviceSubscribers(data);
+      }
+    } catch (error) {
+      console.error('Error fetching device subscribers:', error);
+      setDeviceSubscribers([]);
+    }
+  };
+
+  const handleDeleteSubscriber = async (subscriberId: any, botType: 'river' | 'device') => {
+    const tableName = botType === 'river' ? 'telegram_subscribers' : 'telegram_device_subscriptions';
+    const botName = botType === 'river' ? 'Pantau Sungai' : 'Device & System';
+
+    if (!window.confirm(`Anda yakin ingin menghapus subscriber ini dari bot ${botName}? Pengguna tidak akan lagi menerima notifikasi.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await (supabase as any).from(tableName).delete().eq('id', subscriberId);
+      if (error) throw error;
+
+      toast({ title: "Subscriber Dihapus", description: "Akses notifikasi untuk pengguna telah dicabut." });
+
+      if (botType === 'river') {
+        setRiverSubscribers(prev => prev.filter(sub => sub.id !== subscriberId));
+      } else {
+        setDeviceSubscribers(prev => prev.filter(sub => sub.id !== subscriberId));
+      }
+    } catch (error: any) {
+      console.error(`Error deleting ${botType} subscriber:`, error);
+      toast({ title: "Error", description: error.message || `Gagal menghapus subscriber.`, variant: "destructive" });
+    }
+  };
+
+  const handleUpdateDeviceSubscription = async () => {
+    if (!editingDeviceSubscription) return;
+
+    try {
+      const { error } = await (supabase as any)
+        .from('telegram_device_subscriptions')
+        .update({
+          device_id: editingDeviceSubscription.device_id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingDeviceSubscription.id);
+
+      if (error) throw error;
+
+      toast({ title: "Berhasil", description: "Device subscription berhasil diperbarui." });
+      setIsEditingDevice(false);
+      setEditingDeviceSubscription(null);
+      fetchDeviceSubscribers();
+    } catch (error: any) {
+      console.error('Error updating device subscription:', error);
+      toast({ title: "Error", description: error.message || "Gagal memperbarui subscription.", variant: "destructive" });
     }
   };
 
@@ -436,6 +574,321 @@ const Settings = ({ user }: SettingsProps) => {
 
             </CardContent>
           </Card>
+
+          {isSuperAdmin && (
+            <>
+          {/* River Monitoring Subscribers */}
+          <Card className="border-l-4 border-l-blue-500 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Waves className="w-5 h-5 text-blue-600" />
+                    River Monitoring Subscribers (@PantauSungai_bot)
+                  </CardTitle>
+                  <CardDescription className="mt-2">Daftar pengguna yang berlangganan notifikasi dari bot Pantau Sungai.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="rounded-lg border border-blue-100 overflow-hidden shadow-sm">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold">
+                    <tr>
+                      <th className="px-6 py-4">Chat ID</th>
+                      <th className="px-6 py-4">Username</th>
+                      <th className="px-6 py-4">Name</th>
+                      <th className="px-6 py-4">Joined Date</th>
+                      {userRole === 'superadmin' && <th className="px-6 py-4 text-center">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-blue-100">
+                    {riverSubscribers.length === 0 ? (
+                      <tr>
+                        <td colSpan={userRole === 'superadmin' ? 5 : 4} className="p-8 text-center text-slate-500">
+                          <div className="flex flex-col items-center gap-2">
+                            <Waves className="w-8 h-8 text-slate-300" />
+                            <span>Belum ada data subscriber</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      riverSubscribers
+                        .slice((riverPage - 1) * itemsPerPage, riverPage * itemsPerPage)
+                        .map((sub) => (
+                          <tr key={sub.id} className="hover:bg-blue-50 transition-colors duration-200">
+                            <td className="px-6 py-4 font-mono text-xs bg-slate-50 rounded">{sub.chat_id}</td>
+                            <td className="px-6 py-4">
+                              {sub.username ? (
+                                <span className="text-blue-600 font-semibold">@{sub.username}</span>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 font-medium text-slate-800">
+                              {sub.first_name} {sub.last_name}
+                            </td>
+                            <td className="px-6 py-4 text-slate-600">
+                              {sub.created_at ? new Date(sub.created_at).toLocaleDateString('id-ID') : '-'}
+                            </td>
+                            {userRole === 'superadmin' && (
+                              <td className="px-6 py-4">
+                                <div className="flex items-center justify-center gap-2">
+                                  <Button 
+                                    variant="destructive" 
+                                    size="sm" 
+                                    onClick={() => handleDeleteSubscriber(sub.id, 'river')} 
+                                    title="Delete subscriber"
+                                    className="gap-2"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                    Delete
+                                  </Button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {riverSubscribers.length > itemsPerPage && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-slate-600">
+                    Halaman {riverPage} dari {Math.ceil(riverSubscribers.length / itemsPerPage)} ({riverSubscribers.length} total)
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRiverPage(prev => Math.max(1, prev - 1))}
+                      disabled={riverPage === 1}
+                      className="gap-2"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRiverPage(prev => Math.min(Math.ceil(riverSubscribers.length / itemsPerPage), prev + 1))}
+                      disabled={riverPage === Math.ceil(riverSubscribers.length / itemsPerPage)}
+                      className="gap-2"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {userRole !== 'superadmin' && (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  <p className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 bg-amber-600 rounded-full"></span>
+                    Hanya superadmin yang dapat mengelola subscriber.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Device & System Subscribers */}
+          <Card className="border-l-4 border-l-purple-500 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-purple-600" />
+                    Device & System Subscribers (@AstrodevIoT_bot)
+                  </CardTitle>
+                  <CardDescription className="mt-2">Daftar pengguna yang berlangganan notifikasi dari bot Device & System.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="rounded-lg border border-purple-100 overflow-hidden shadow-sm">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gradient-to-r from-purple-600 to-purple-700 text-white font-semibold">
+                    <tr>
+                      <th className="px-6 py-4">Chat ID</th>
+                      <th className="px-6 py-4">Username</th>
+                      <th className="px-6 py-4">Device</th>
+                      <th className="px-6 py-4">Joined Date</th>
+                      {userRole === 'superadmin' && <th className="px-6 py-4 text-center">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-purple-100">
+                    {deviceSubscribers.length === 0 ? (
+                      <tr>
+                        <td colSpan={userRole === 'superadmin' ? 5 : 4} className="p-8 text-center text-slate-500">
+                          <div className="flex flex-col items-center gap-2">
+                            <Bot className="w-8 h-8 text-slate-300" />
+                            <span>Belum ada data subscriber</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      deviceSubscribers
+                        .slice((devicePage - 1) * itemsPerPage, devicePage * itemsPerPage)
+                        .map((sub) => (
+                        <tr key={sub.id} className="hover:bg-purple-50 transition-colors duration-200">
+                          <td className="px-6 py-4 font-mono text-xs bg-slate-50 rounded">{sub.chat_id}</td>
+                          <td className="px-6 py-4">
+                            {sub.username ? (
+                              <span className="text-purple-600 font-semibold">@{sub.username}</span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-1">
+                              <span className="font-medium text-slate-800">{sub.devices?.name || 'Unknown Device'}</span>
+                              <span className="text-xs text-slate-500 font-mono">{sub.device_id}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-600">
+                            {sub.created_at ? new Date(sub.created_at).toLocaleDateString('id-ID') : '-'}
+                          </td>
+                          {userRole === 'superadmin' && (
+                            <td className="px-6 py-4">
+                              <div className="flex items-center justify-center gap-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => {
+                                    setEditingDeviceSubscription(sub);
+                                    setIsEditingDevice(true);
+                                  }} 
+                                  title="Edit subscription"
+                                  className="gap-2"
+                                >
+                                  ✏️ Edit
+                                </Button>
+                                <Button 
+                                  variant="destructive" 
+                                  size="sm" 
+                                  onClick={() => handleDeleteSubscriber(sub.id, 'device')} 
+                                  title="Delete subscriber"
+                                  className="gap-2"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Delete
+                                </Button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {deviceSubscribers.length > itemsPerPage && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-slate-600">
+                    Halaman {devicePage} dari {Math.ceil(deviceSubscribers.length / itemsPerPage)} ({deviceSubscribers.length} total)
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDevicePage(prev => Math.max(1, prev - 1))}
+                      disabled={devicePage === 1}
+                      className="gap-2"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDevicePage(prev => Math.min(Math.ceil(deviceSubscribers.length / itemsPerPage), prev + 1))}
+                      disabled={devicePage === Math.ceil(deviceSubscribers.length / itemsPerPage)}
+                      className="gap-2"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {userRole !== 'superadmin' && (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  <p className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 bg-amber-600 rounded-full"></span>
+                    Hanya superadmin yang dapat mengelola subscriber.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Edit Device Subscription Modal */}
+          {isEditingDevice && editingDeviceSubscription && (
+            <Card className="border-2 border-purple-200 bg-purple-50">
+              <CardHeader>
+                <CardTitle>Edit Device Subscription</CardTitle>
+                <CardDescription>Ubah device untuk subscriber {editingDeviceSubscription.username}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-slate-600">Chat ID</Label>
+                  <p className="mt-2 font-mono text-sm bg-slate-100 p-2 rounded">{editingDeviceSubscription.chat_id}</p>
+                </div>
+                <div>
+                  <Label className="text-slate-600">Username</Label>
+                  <p className="mt-2 font-semibold text-purple-600">{editingDeviceSubscription.username}</p>
+                </div>
+                <div>
+                  <Label htmlFor="device-select">Pilih Device</Label>
+                  <Select 
+                    value={editingDeviceSubscription.device_id} 
+                    onValueChange={(value) => 
+                      setEditingDeviceSubscription({...editingDeviceSubscription, device_id: value})
+                    }
+                  >
+                    <SelectTrigger id="device-select">
+                      <SelectValue placeholder="Pilih device..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* Get unique devices from subscribers */}
+                      {Array.from(
+                        new Map(
+                          deviceSubscribers
+                            .filter(sub => sub.devices)
+                            .map(sub => [sub.device_id, sub.devices])
+                        ).values()
+                      ).map((device: any) => (
+                        <SelectItem key={device.id} value={device.id}>
+                          {device.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-2 justify-end pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsEditingDevice(false);
+                      setEditingDeviceSubscription(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleUpdateDeviceSubscription}
+                    className="bg-purple-600 hover:bg-purple-700"
+                  >
+                    Save Changes
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="api" className="space-y-6">

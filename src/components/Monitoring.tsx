@@ -3,14 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Bell, Info } from 'lucide-react';
+import { Bell, Info, Activity, Signal, Clock, Thermometer, Droplets, Gauge, Waves, TrendingUp, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { subDays, subHours } from 'date-fns';
 import DevicePagination from './DevicePagination';
 import ExcelReport from './ExcelReport';
+import DeviceDetails from './DeviceDetails';
 
 interface DeviceStatus {
   id: string;
@@ -51,198 +51,125 @@ interface Device {
   serial: string;
   created_at: string;
   updated_at: string;
+  last_seen?: string;
+  sensor_data?: any;
+  wifi_rssi?: number;
 }
 
-const Monitoring = () => {
-  const [devices, setDevices] = useState<(Device & Partial<DeviceStatus>)[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState('user');
-  const [selectedDevice, setSelectedDevice] = useState('all');
-  const [timeRange, setTimeRange] = useState('24h');
-  const [sensorData, setSensorData] = useState<any[]>([]);
-  const [alarmEvents, setAlarmEvents] = useState<AlarmEvent[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [eventsPerPage] = useState(5);
+const Monitoring: React.FC = () => {
   const { toast } = useToast();
+  const [devices, setDevices] = useState<(Device & Partial<DeviceStatus>)[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<string>('all');
+  const [sensorData, setSensorData] = useState<any[]>([]);
+  const [timeRange, setTimeRange] = useState<'1h' | '24h' | '7d' | '30d'>('24h');
+  const [alarmEvents, setAlarmEvents] = useState<AlarmEvent[]>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const eventsPerPage = 5;
+  const [userRole, setUserRole] = useState<string>('user');
+  const [selectedDeviceForDetails, setSelectedDeviceForDetails] = useState<Device & Partial<DeviceStatus> | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline'>('all');
+  const [filterType, setFilterType] = useState('all');
+  const [uniqueDeviceTypes, setUniqueDeviceTypes] = useState<string[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
+  // Fetch devices on mount and set up auto-refresh
   useEffect(() => {
-    fetchUserRole();
     fetchDevices();
-
-    // Subscribe to real-time updates from Communication Protocols
-    const channel = supabase.channel('mqtt-status-updates')
-      .on('broadcast', { event: 'device-status-update' }, (payload) => {
-        const { device_id, status, battery, wifi_rssi, uptime, free_heap } = payload.payload;
-        
-          setDevices(prevDevices => {
-            return prevDevices.map(device => {
-              if (device.id === device_id) {
-                return {
-                  ...device,
-                  status: status || device.status,
-                  battery: battery !== undefined && battery !== null ? battery : device.battery,
-                  wifi_rssi: wifi_rssi !== undefined && wifi_rssi !== null ? wifi_rssi : device.wifi_rssi,
-                  uptime: uptime !== undefined && uptime !== null ? uptime : device.uptime,
-                  free_heap: free_heap !== undefined && free_heap !== null ? free_heap : device.free_heap,
-                  updated_at: new Date().toISOString()
-                };
-              }
-              return device;
-            });
-          });
-      })
-      .subscribe();
-
-    // Set up interval to check device status every minute
-    const statusCheckInterval = setInterval(() => {
-      console.log('Checking device status automatically...');
+    fetchSensorData();
+    const interval = setInterval(() => {
       fetchDevices();
-    }, 60000); // 60 seconds = 1 minute
-
-    return () => {
-      supabase.removeChannel(channel);
-      clearInterval(statusCheckInterval);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (devices.length > 0 || selectedDevice === 'all') {
       fetchSensorData();
-    }
-  }, [selectedDevice, timeRange, devices]);
+    }, 30000); // Auto-refresh every 30 seconds
 
+    return () => clearInterval(interval);
+  }, [timeRange, selectedDevice]);
+
+  // Fetch and format timestamp functions
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Jakarta'
-    });
+    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
 
   const formatDateTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
-    return date.toLocaleString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-      timeZone: 'Asia/Jakarta'
-    });
-  };
-
-  const fetchUserRole = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-        
-        if (profile) {
-          setUserRole(profile.role || 'user');
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching user role:', error);
-    }
+    return date.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' });
   };
 
   const fetchDevices = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: deviceList, error: deviceError } = await supabase
+        .from('devices')
+        .select('*');
 
-      console.log('Fetching devices for user:', user.id);
+      if (deviceError) throw deviceError;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
+      // Get unique device types
+      const types = [...new Set(deviceList?.map(d => d.type) || [])];
+      setUniqueDeviceTypes(types as string[]);
 
-      const userRole = profile?.role || 'user';
-      console.log('User role:', userRole);
+      const devicePromises = (deviceList || []).map(async (device) => {
+        try {
+          const { data: statusData, error: statusError } = await supabase
+            .from('device_status')
+            .select('*')
+            .eq('device_id', device.id)
+            .order('timestamp', { ascending: false })
+            .limit(1)
+            .single();
 
-      let deviceList: any[] = [];
-      if (userRole === 'superadmin' || userRole === 'admin') {
-        // Admin and superadmin can see all devices
-        const { data: allDevices, error } = await supabase
-          .from('devices')
-          .select('*')
-          .order('created_at', { ascending: false });
+          if (statusError && statusError.code !== 'PGRST116') throw statusError;
 
-        if (error) throw error;
-        deviceList = allDevices || [];
-        console.log('Admin/Superadmin devices:', deviceList);
-      } else {
-        // Regular users can only see devices they have access to
-        const { data: accessData, error } = await supabase
-          .from('user_device_access')
-          .select(`
-            devices!user_device_access_device_id_fkey(*)
-          `)
-          .eq('user_id', user.id);
+          // Determine if device is online: recent data wins unless explicitly offline
+          let currentStatus: 'online' | 'offline' = 'offline';
+          if (statusData) {
+            const lastUpdate = new Date(statusData.timestamp).getTime();
+            const isRecent = (Date.now() - lastUpdate) <= (30 * 60 * 1000); // 30 minutes
 
-        if (error) {
-          console.error('Error fetching user device access:', error);
-          throw error;
-        }
-
-        console.log('User device access data:', accessData);
-        deviceList = accessData?.map(access => access.devices).filter(device => device !== null) || [];
-        console.log('User accessible devices:', deviceList);
-      }
-
-      // Get latest status for each device and determine online/offline status
-          const devicePromises = deviceList.map(async (device: Device) => {
-            try {
-              const { data: statusData } = await supabase
-                .from('device_status')
-                .select('wifi_rssi, uptime, free_heap, ota_update, status, battery, timestamp, sensor_data')
-                .eq('device_id', device.id)
-                .order('timestamp', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-              // Determine online/offline status based on last data timestamp
-              let currentStatus: 'online' | 'offline' = 'offline';
-              if (statusData && statusData.timestamp) {
-                const lastDataTime = new Date(statusData.timestamp);
-                const currentTime = new Date();
-                const timeDifference = currentTime.getTime() - lastDataTime.getTime();
-const fiveMinutesInMs = 5 * 60 * 1000; // 5 minutes in milliseconds
-                
-// If last data was received within 5 minutes, device is online
-// This gives more buffer time for device communication
-if (timeDifference <= fiveMinutesInMs) {
-  currentStatus = 'online';
-}
-              }
-
-              console.log(`Device ${device.name}: Last seen ${statusData?.timestamp}, Status: ${currentStatus}`);
-
-              return {
-                ...device,
-                wifi_rssi: statusData?.wifi_rssi,
-                uptime: statusData?.uptime,
-                free_heap: statusData?.free_heap,
-                ota_update: statusData?.ota_update,
-                status: currentStatus,
-                battery: statusData?.battery !== undefined && statusData?.battery !== null ? statusData.battery : device.battery,
-                last_seen: statusData?.timestamp
-              } as Device & Partial<DeviceStatus>;
-            } catch (error) {
-              console.error(`Error fetching status for device ${device.id}:`, error);
-              return {
-                ...device,
-                status: 'offline' as 'offline'
-              } as Device & Partial<DeviceStatus>;
+            if (statusData.status === 'offline') {
+              currentStatus = 'offline';
+            } else if (isRecent) {
+              // If recent, consider online even when status is null/missing
+              currentStatus = 'online';
+            } else {
+              currentStatus = 'offline';
             }
-          });
+          }
+
+          let parsedSensorData: any = {};
+          if (statusData?.sensor_data && typeof statusData.sensor_data === 'string') {
+            try {
+              parsedSensorData = JSON.parse(statusData.sensor_data);
+            } catch (e) {
+              parsedSensorData = statusData.sensor_data;
+            }
+          } else if (statusData?.sensor_data) {
+            parsedSensorData = statusData.sensor_data;
+          }
+
+          return {
+            ...device,
+            wifi_rssi: statusData?.wifi_rssi,
+            uptime: statusData?.uptime,
+            free_heap: statusData?.free_heap,
+            ota_update: statusData?.ota_update,
+            status: currentStatus,
+            battery: statusData?.battery !== undefined && statusData?.battery !== null ? statusData.battery : device.battery,
+            last_seen: statusData?.timestamp,
+            sensor_data: parsedSensorData,
+            last_status_timestamp: statusData?.timestamp
+          } as Device & Partial<DeviceStatus>;
+        } catch (error) {
+          console.error(`Error fetching status for device ${device.id}:`, error);
+          return {
+            ...device,
+            status: 'offline' as const
+          } as Device & Partial<DeviceStatus>;
+        }
+      });
 
       const devicesWithStatus = await Promise.all(devicePromises);
       setDevices(devicesWithStatus);
@@ -487,8 +414,23 @@ if (timeDifference <= fiveMinutesInMs) {
     }
   };
 
-  // Format time ago for events
+  // Explicit refresh handler for the Refresh Data button
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchDevices(), fetchSensorData(), generateAlarmEvents()]);
+      toast({ title: 'Refreshed', description: 'Monitoring data updated.' });
+    } catch (error) {
+      console.error('Error during manual refresh:', error);
+      toast({ title: 'Error', description: 'Failed to refresh data', variant: 'destructive' });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Format time ago for events/connections
   const formatTimeAgo = (timestamp: string) => {
+    if (!timestamp) return 'Unknown';
     const now = new Date();
     const time = new Date(timestamp);
     const diffInMinutes = Math.floor((now.getTime() - time.getTime()) / (1000 * 60));
@@ -497,6 +439,19 @@ if (timeDifference <= fiveMinutesInMs) {
     if (diffInMinutes < 60) return `${diffInMinutes} menit yang lalu`;
     if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} jam yang lalu`;
     return `${Math.floor(diffInMinutes / 1440)} hari yang lalu`;
+  };
+
+  const formatLastConnected = (timestamp: string) => {
+    if (!timestamp) return '-';
+    return new Date(timestamp).toLocaleString('id-ID', {
+      timeZone: 'UTC',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
   };
 
   // Get event icon based on type
@@ -534,13 +489,87 @@ if (timeDifference <= fiveMinutesInMs) {
     return () => clearInterval(interval);
   }, [devices]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p>Loading monitoring data...</p>
-      </div>
-    );
-  }
+  // Helper functions for device card display
+  const getBatteryColor = (battery: number) => {
+    if (battery >= 60) return 'text-green-600';
+    if (battery >= 30) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getBatteryIcon = (battery: number) => {
+    if (battery >= 60) return '🔋';
+    if (battery >= 30) return '🪫';
+    return '⚠️';
+  };
+
+  const getSignalColor = (rssi: number) => {
+    if (rssi >= -60) return 'text-green-600';
+    if (rssi >= -75) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getSignalIcon = (rssi: number) => {
+    if (rssi >= -60) return <Signal className="w-4 h-4" />;
+    if (rssi >= -75) return <Signal className="w-4 h-4" />;
+    return <Signal className="w-4 h-4" />;
+  };
+
+  const getSensorIcon = (sensorType: string) => {
+    const t = (sensorType || '').toLowerCase();
+    if (t.includes('temp')) return <Thermometer className="h-4 w-4 text-red-500" />;
+    if (t.includes('humid')) return <Droplets className="h-4 w-4 text-blue-500" />;
+    if (t.includes('press')) return <Gauge className="h-4 w-4 text-green-500" />;
+    if (t.includes('tinggi') || t.includes('water') || t.includes('level')) return <Waves className="h-4 w-4 text-cyan-600" />;
+    return <Activity className="h-4 w-4 text-gray-400" />;
+  };
+
+  const formatUptime = (seconds: number) => {
+    if (!seconds) return 'N/A';
+    const days = Math.floor(seconds / (24 * 60 * 60));
+    const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (parts.length === 0) return `${Math.floor(seconds / 60)}m`;
+    return parts.join(' ');
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (!bytes || bytes === 0) return 'N/A';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  };
+
+  const handleDeviceClick = (device: Device & Partial<DeviceStatus>) => {
+    setSelectedDeviceForDetails(device);
+    setIsDetailsOpen(true);
+  };
+
+  const handleEditDevice = (device: Device) => {
+    // Implement edit functionality or navigate to edit page
+    console.log('Edit device:', device);
+  };
+
+  // Filter devices based on search query and filters
+  const getFilteredDevices = () => {
+    return devices.filter(device => {
+      const matchesSearch = 
+        device.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        device.serial?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        device.mac?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        device.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        device.description?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesStatus = filterStatus === 'all' || device.status === filterStatus;
+      const matchesType = filterType === 'all' || device.type === filterType;
+
+      return matchesSearch && matchesStatus && matchesType;
+    });
+  };
+
+  const filteredDevices = getFilteredDevices();
 
   return (
     <div className="space-y-6">
@@ -549,170 +578,116 @@ if (timeDifference <= fiveMinutesInMs) {
           <h1 className="text-3xl font-bold text-gray-900">Monitoring</h1>
           <p className="text-gray-600">Monitor real-time sensor data and device performance</p>
         </div>
-        
         <div className="flex gap-2">
-          <ExcelReport devices={devices} />
-          <Button onClick={() => { fetchDevices(); fetchSensorData(); }} variant="outline">
-            Refresh Data
+          <ExcelReport devices={filteredDevices} />
+          <Button onClick={handleRefresh} variant="outline" disabled={refreshing}>
+            {refreshing ? 'Refreshing…' : 'Refresh Data'}
           </Button>
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex gap-4 items-center">
-        <div className="flex items-center gap-2">
-          <label htmlFor="device-select" className="text-sm font-medium">Device:</label>
-          <Select value={selectedDevice} onValueChange={setSelectedDevice}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Devices</SelectItem>
-              {devices.map((device) => (
-                <SelectItem key={device.id} value={device.id}>
-                  {device.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Search and Filter Bar */}
+      <div className="bg-white p-4 rounded-lg border space-y-4">
+        {/* Search */}
+        <div>
+          <label className="text-sm font-medium text-gray-700 block mb-2">Search Device</label>
+          <input
+            type="text"
+            placeholder="Cari berdasarkan nama, serial, MAC, lokasi..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
-        
-        <div className="flex items-center gap-2">
-          <label htmlFor="time-range" className="text-sm font-medium">Time Range:</label>
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1h">Last Hour</SelectItem>
-              <SelectItem value="24h">Last 24h</SelectItem>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-            </SelectContent>
-          </Select>
+
+        {/* Filter Row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Status Filter */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-2">Status</label>
+            <Select value={filterStatus} onValueChange={(value) => {
+              setFilterStatus(value as 'all' | 'online' | 'offline');
+              setCurrentPage(1);
+            }}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="online">Online</SelectItem>
+                <SelectItem value="offline">Offline</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Type Filter */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-2">Tipe Device</label>
+            <Select value={filterType} onValueChange={(value) => {
+              setFilterType(value);
+              setCurrentPage(1);
+            }}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Tipe</SelectItem>
+                {uniqueDeviceTypes.map(type => (
+                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
-      {/* Device Status Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Device Status Information</CardTitle>
-          <CardDescription>Real-time status monitoring dari Communication Protocols</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {devices.map((device) => (
-              <div key={device.id} className="p-4 border rounded-lg space-y-3">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-medium">{device.name}</h3>
+      {/* Devices Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredDevices.length > 0 ? (
+          filteredDevices.map((device) => (
+            <Card key={device.id} onClick={() => handleDeviceClick(device)} className="cursor-pointer hover:shadow-md transition">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div>
+                  <CardTitle className="text-lg">{device.name}</CardTitle>
+                  <CardDescription className="text-xs">{device.type}</CardDescription>
                 </div>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div className="flex justify-between">
-                    <span>Battery Level:</span>
-                    <span className="font-medium">{device.battery !== undefined && device.battery !== null ? device.battery : 0}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>WiFi Signal:</span>
-                    <span className="font-medium">{device.wifi_rssi !== undefined && device.wifi_rssi !== null ? device.wifi_rssi : 'N/A'} dBm</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Uptime:</span>
-                    <span className="font-medium">{device.uptime !== undefined && device.uptime !== null ? `${Math.floor(device.uptime / 3600)}h ${Math.floor((device.uptime % 3600) / 60)}m` : 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Free Memory:</span>
-                    <span className="font-medium">{device.free_heap !== undefined && device.free_heap !== null ? `${Math.floor(device.free_heap / 1024)} KB` : 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>OTA Status:</span>
-                    <span className="font-medium">{device.ota_update !== undefined && device.ota_update !== null ? device.ota_update : 'N/A'}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+                <Badge variant={device.status === 'online' ? 'default' : 'secondary'}>
+                  {device.status}
+                </Badge>
+              </CardHeader>
+              <CardContent className="text-sm text-gray-700 space-y-1">
+                {device.location && <div>📍 {device.location}</div>}
+                {device.battery !== undefined && device.battery !== null && (
+                  <div>🔋 {device.battery}%</div>
+                )}
+                {device.wifi_rssi !== undefined && device.wifi_rssi !== null && (
+                  <div>📶 {device.wifi_rssi} dBm</div>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="col-span-full text-center py-12 text-gray-500">
+            <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p>No devices registered yet</p>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
-      {/* Device Status Charts */}
-      <Tabs defaultValue="battery">
-        <div className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="battery">Battery Levels</TabsTrigger>
-            <TabsTrigger value="rssi">WiFi Signal (RSSI)</TabsTrigger>
-          </TabsList>
-        
-          <TabsContent value="battery" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Battery Levels</CardTitle>
-                <CardDescription>Device battery status over time</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={sensorData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" />
-                      <YAxis domain={[0, 100]} />
-                      <Tooltip 
-                        labelFormatter={(label) => {
-                          const matchingData = sensorData.find(item => item.time === label);
-                          return matchingData ? formatTimestamp(matchingData.timestamp) : label;
-                        }}
-                      />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="battery" 
-                        stroke="#ff7300" 
-                        name="Battery (%)"
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+      {/* Device Details Modal */}
 
-          <TabsContent value="rssi" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>WiFi Signal Strength (RSSI)</CardTitle>
-                <CardDescription>Device WiFi signal strength over time</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={sensorData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" />
-                      <YAxis domain={[-100, 0]} />
-                      <Tooltip 
-                        labelFormatter={(label) => {
-                          const matchingData = sensorData.find(item => item.time === label);
-                          return matchingData ? formatTimestamp(matchingData.timestamp) : label;
-                        }}
-                      />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="wifi_rssi" 
-                        stroke="#8884d8" 
-                        name="RSSI (dBm)"
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </div>
-      </Tabs>
+      {/* Device Details Modal */}
+      {selectedDeviceForDetails && (
+        <DeviceDetails
+          device={selectedDeviceForDetails}
+          open={isDetailsOpen}
+          onOpenChange={setIsDetailsOpen}
+          onEdit={handleEditDevice}
+        />
+      )}
 
       {/* Recent Events Parameters Info */}
       <Card>

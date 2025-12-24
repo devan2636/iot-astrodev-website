@@ -79,8 +79,9 @@ const Sidebar = ({ currentPage, onPageChange, user, onLogout }: SidebarProps) =>
       { id: 'devices', label: 'Devices', icon: Smartphone },
       { id: 'sensors', label: 'Sensors', icon: Gauge },
       { id: 'monitoring', label: 'Monitoring', icon: Activity },
-      { id: 'weather-station', label: 'Weather Station', icon: Cloud },
-      { id: 'prediction', label: 'Weather Prediction', icon: Zap },
+      { id: 'public-access', label: 'Public Access', icon: Info },
+      // { id: 'weather-station', label: 'Weather Station', icon: Cloud },
+      // { id: 'prediction', label: 'Weather Prediction', icon: Zap },
       { id: 'settings', label: 'Settings', icon: Settings },
       { id: 'about', label: 'About', icon: Info },
     ];

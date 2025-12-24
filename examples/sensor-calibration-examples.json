@@ -1,0 +1,241 @@
+{
+  "examples": [
+    {
+      "scenario": "Temperature Sensor - Simple Offset Correction",
+      "description": "Sensor temperatur yang selalu lebih tinggi 2 derajat dari nilai sebenarnya",
+      "sensor": {
+        "name": "Temperature Sensor",
+        "type": "Temperature",
+        "unit": "°C",
+        "min_value": -20,
+        "max_value": 80
+      },
+      "calibration": {
+        "calibration_a": 1.0,
+        "calibration_b": -2.0,
+        "explanation": "y = 1.0x + (-2.0) untuk mengurangi 2 derajat dari pembacaan"
+      },
+      "threshold": {
+        "threshold_low": 5,
+        "threshold_high": 40,
+        "explanation": "Alert jika terlalu dingin (<5°C) atau terlalu panas (>40°C)"
+      },
+      "test_cases": [
+        {
+          "raw_input": 27,
+          "calibrated_output": 25,
+          "calculation": "y = 1.0 × 27 + (-2.0) = 25°C",
+          "alert": "none"
+        },
+        {
+          "raw_input": 42,
+          "calibrated_output": 40,
+          "calculation": "y = 1.0 × 42 + (-2.0) = 40°C",
+          "alert": "none (tepat di threshold)"
+        },
+        {
+          "raw_input": 43,
+          "calibrated_output": 41,
+          "calculation": "y = 1.0 × 43 + (-2.0) = 41°C",
+          "alert": "HIGH - Nilai terlalu tinggi! 41°C > 40°C"
+        },
+        {
+          "raw_input": 6,
+          "calibrated_output": 4,
+          "calculation": "y = 1.0 × 6 + (-2.0) = 4°C",
+          "alert": "LOW - Nilai terlalu rendah! 4°C < 5°C"
+        }
+      ]
+    },
+    {
+      "scenario": "Water Level Sensor - Scale and Offset",
+      "description": "Sensor ketinggian air yang perlu dikalibrasi dengan faktor scaling dan offset",
+      "sensor": {
+        "name": "Water Level Sensor",
+        "type": "Ketinggian Air",
+        "unit": "cm",
+        "min_value": 0,
+        "max_value": 500
+      },
+      "calibration": {
+        "calibration_a": 1.05,
+        "calibration_b": -3.5,
+        "explanation": "Koreksi dengan scaling 105% dan mengurangi offset 3.5cm"
+      },
+      "threshold": {
+        "threshold_low": 50,
+        "threshold_high": 400,
+        "explanation": "Alert jika air terlalu rendah (<50cm) atau risiko banjir (>400cm)"
+      },
+      "test_cases": [
+        {
+          "raw_input": 100,
+          "calibrated_output": 101.5,
+          "calculation": "y = 1.05 × 100 + (-3.5) = 101.5 cm",
+          "alert": "none"
+        },
+        {
+          "raw_input": 45,
+          "calibrated_output": 43.75,
+          "calculation": "y = 1.05 × 45 + (-3.5) = 43.75 cm",
+          "alert": "LOW - Air terlalu rendah! 43.75cm < 50cm"
+        },
+        {
+          "raw_input": 385,
+          "calibrated_output": 400.75,
+          "calculation": "y = 1.05 × 385 + (-3.5) = 400.75 cm",
+          "alert": "HIGH - Risiko banjir! 400.75cm > 400cm"
+        }
+      ]
+    },
+    {
+      "scenario": "Pressure Sensor - Scaling Only",
+      "description": "Sensor tekanan yang perlu dikalibrasi dengan faktor 0.98",
+      "sensor": {
+        "name": "Pressure Sensor",
+        "type": "Pressure",
+        "unit": "hPa",
+        "min_value": 800,
+        "max_value": 1100
+      },
+      "calibration": {
+        "calibration_a": 0.98,
+        "calibration_b": 0,
+        "explanation": "Mengalikan dengan 0.98 tanpa offset"
+      },
+      "threshold": {
+        "threshold_low": 950,
+        "threshold_high": 1050,
+        "explanation": "Alert jika tekanan abnormal"
+      },
+      "test_cases": [
+        {
+          "raw_input": 1000,
+          "calibrated_output": 980,
+          "calculation": "y = 0.98 × 1000 + 0 = 980 hPa",
+          "alert": "none"
+        },
+        {
+          "raw_input": 960,
+          "calibrated_output": 940.8,
+          "calculation": "y = 0.98 × 960 + 0 = 940.8 hPa",
+          "alert": "LOW - Tekanan terlalu rendah! 940.8hPa < 950hPa"
+        }
+      ]
+    },
+    {
+      "scenario": "pH Sensor - No Calibration with Threshold",
+      "description": "Sensor pH tanpa kalibrasi, hanya menggunakan threshold untuk alert",
+      "sensor": {
+        "name": "pH Sensor",
+        "type": "pH",
+        "unit": "pH",
+        "min_value": 0,
+        "max_value": 14
+      },
+      "calibration": {
+        "calibration_a": 1.0,
+        "calibration_b": 0,
+        "explanation": "Tidak perlu kalibrasi, nilai default (a=1, b=0)"
+      },
+      "threshold": {
+        "threshold_low": 6.5,
+        "threshold_high": 8.5,
+        "explanation": "Alert jika pH terlalu asam atau terlalu basa"
+      },
+      "test_cases": [
+        {
+          "raw_input": 7.2,
+          "calibrated_output": 7.2,
+          "calculation": "y = 1.0 × 7.2 + 0 = 7.2 pH",
+          "alert": "none - pH normal"
+        },
+        {
+          "raw_input": 5.8,
+          "calibrated_output": 5.8,
+          "calculation": "y = 1.0 × 5.8 + 0 = 5.8 pH",
+          "alert": "LOW - pH terlalu asam! 5.8 < 6.5"
+        },
+        {
+          "raw_input": 9.2,
+          "calibrated_output": 9.2,
+          "calculation": "y = 1.0 × 9.2 + 0 = 9.2 pH",
+          "alert": "HIGH - pH terlalu basa! 9.2 > 8.5"
+        }
+      ]
+    },
+    {
+      "scenario": "Humidity Sensor - Complex Calibration",
+      "description": "Sensor kelembaban dengan kalibrasi kompleks",
+      "sensor": {
+        "name": "Humidity Sensor",
+        "type": "Humidity",
+        "unit": "%",
+        "min_value": 0,
+        "max_value": 100
+      },
+      "calibration": {
+        "calibration_a": 0.95,
+        "calibration_b": 2.5,
+        "explanation": "Koreksi dengan scaling 95% dan menambah offset 2.5%"
+      },
+      "threshold": {
+        "threshold_low": 30,
+        "threshold_high": 80,
+        "explanation": "Alert jika terlalu kering (<30%) atau terlalu lembab (>80%)"
+      },
+      "test_cases": [
+        {
+          "raw_input": 50,
+          "calibrated_output": 50,
+          "calculation": "y = 0.95 × 50 + 2.5 = 50%",
+          "alert": "none"
+        },
+        {
+          "raw_input": 25,
+          "calibrated_output": 26.25,
+          "calculation": "y = 0.95 × 25 + 2.5 = 26.25%",
+          "alert": "LOW - Terlalu kering! 26.25% < 30%"
+        },
+        {
+          "raw_input": 85,
+          "calibrated_output": 83.25,
+          "calculation": "y = 0.95 × 85 + 2.5 = 83.25%",
+          "alert": "HIGH - Terlalu lembab! 83.25% > 80%"
+        }
+      ]
+    }
+  ],
+  "sql_queries_for_testing": {
+    "insert_test_sensor": "INSERT INTO sensors (device_id, name, type, unit, min_value, max_value, calibration_a, calibration_b, threshold_low, threshold_high) VALUES ('your-device-uuid', 'Test Temperature Sensor', 'Temperature', '°C', -20, 80, 1.0, -2.0, 5, 40);",
+    "check_sensors_with_calibration": "SELECT id, name, type, unit, calibration_a, calibration_b, threshold_low, threshold_high FROM sensors WHERE calibration_a IS NOT NULL OR threshold_low IS NOT NULL;",
+    "check_recent_alerts": "SELECT sa.*, s.name as sensor_name, d.name as device_name FROM sensor_alerts sa JOIN sensors s ON sa.sensor_id = s.id JOIN devices d ON sa.device_id = d.id ORDER BY sa.created_at DESC LIMIT 10;",
+    "check_sensor_data_with_calibration": "SELECT sd.id, s.name, sd.raw_value, sd.value as calibrated_value, sd.timestamp FROM sensor_data sd JOIN sensors s ON sd.sensor_id = s.id WHERE s.calibration_a != 1.0 OR s.calibration_b != 0 ORDER BY sd.timestamp DESC LIMIT 20;"
+  },
+  "postman_test_requests": {
+    "test_calibration": {
+      "url": "https://your-project.supabase.co/functions/v1/apply-sensor-calibration",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer YOUR_ANON_KEY",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "sensorId": "sensor-uuid-here",
+        "rawValue": 25.5
+      }
+    },
+    "test_threshold": {
+      "url": "https://your-project.supabase.co/functions/v1/check-sensor-threshold",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer YOUR_ANON_KEY",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "sensorId": "sensor-uuid-here",
+        "value": 45
+      }
+    }
+  }
+}

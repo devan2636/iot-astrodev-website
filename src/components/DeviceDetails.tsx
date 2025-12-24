@@ -6,12 +6,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { QRCodeCanvas } from 'qrcode.react'; 
 import html2canvas from 'html2canvas'; 
-import { Download, Edit, Activity, Wifi, Battery, Clock, Database, Save, BellRing, ScanLine, QrCode } from 'lucide-react';
+import { Download, Edit, Activity, Wifi, Battery, Clock, Database, Save, BellRing, ScanLine, QrCode, Users } from 'lucide-react';
 
 const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
   const [statusData, setStatusData] = useState([]);
   const [deviceStatus, setDeviceStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [userRole, setUserRole] = useState('user');
+  const [lastConnection, setLastConnection] = useState(null);
+  const [deviceAccess, setDeviceAccess] = useState([]);
   
   const stickerRef = useRef(null);
 
@@ -19,6 +22,9 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
     if (device && open) {
       fetchDeviceStatusHistory();
       fetchLatestDeviceStatus();
+      fetchUserRole();
+      fetchLastConnection();
+      fetchDeviceAccess();
     }
   }, [device, open]);
 
@@ -30,21 +36,86 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
     if (stickerRef.current) {
       try {
         const canvas = await html2canvas(stickerRef.current, {
-          scale: 6, 
+          scale: 6,
           useCORS: true,
           backgroundColor: '#ffffff',
           logging: false,
         });
 
-        const image = canvas.toDataURL("image/png");
-        const link = document.createElement("a");
+        const image = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
         link.href = image;
         link.download = `Label-${device.name.replace(/\s+/g, '_')}-${device.serial}.png`;
         link.click();
       } catch (error) {
-        console.error("Error generating sticker:", error);
+        console.error('Error generating sticker:', error);
       }
     }
+  };
+
+  const fetchUserRole = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        if (profile) {
+          console.log('DeviceDetails - User Role:', profile.role);
+          setUserRole(profile.role || 'user');
+        }
+      }
+    } catch (error) { console.error(error); }
+  };
+
+  const fetchDeviceAccess = async () => {
+    if (!device) return;
+    try {
+      console.log('DeviceDetails - Fetching device access for device:', device.id);
+      
+      // Use the view for easier access to all related data
+      const { data, error } = await supabase
+        .from('user_device_access_details_view')
+        .select('*')
+        .eq('device_id', device.id);
+      
+      console.log('DeviceDetails - Device Access from view:', data, 'Error:', error);
+      
+      if (!error && data && data.length > 0) {
+        const formattedAccess = data.map(item => ({
+          username: item.profile_username || 'Unknown',
+          email: 'N/A',
+          granted_at: item.created_at,
+          device_name: item.device_name,
+          device_location: item.device_location
+        }));
+        
+        console.log('DeviceDetails - Device Access Formatted:', formattedAccess);
+        setDeviceAccess(formattedAccess);
+      } else {
+        console.log('DeviceDetails - No device access found or error occurred');
+        setDeviceAccess([]);
+      }
+    } catch (error) { 
+      console.error('DeviceDetails - fetchDeviceAccess error:', error);
+      setDeviceAccess([]);
+    }
+  };
+
+  const fetchLastConnection = async () => {
+    if (!device) return;
+    try {
+      const { data, error } = await supabase
+        .from('device_status')
+        .select('timestamp')
+        .eq('device_id', device.id)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!error && data) setLastConnection(data.timestamp);
+    } catch (error) { console.error(error); }
   };
 
   const fetchLatestDeviceStatus = async () => {
@@ -70,7 +141,7 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
         .from('device_status')
         .select('battery, wifi_rssi, timestamp')
         .eq('device_id', device.id)
-        .order('timestamp', { ascending: true })
+        .order('timestamp', { ascending: false })
         .limit(20);
       
       if (error) throw error;
@@ -83,21 +154,82 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
           time.setMinutes(baseTime.getMinutes() - i * 5);
           sampleData.push({
             timestamp: time.toISOString(),
+            time: formatTimestamp(time.toISOString()),
             battery: device.battery - Math.floor(i * 0.5),
             wifi_rssi: -75 + Math.floor(Math.random() * 10),
           });
         }
         setStatusData(sampleData);
       } else {
-        setStatusData(data);
+        // Take latest 20, then reverse to ascending for chart, and add formatted time
+        const formattedData = (data || []).reverse().map(item => ({
+          ...item,
+          time: formatTimestamp(item.timestamp)
+        }));
+        setStatusData(formattedData);
       }
     } catch (error) { console.error(error); } 
     finally { setLoading(false); }
   };
   
+  // Normalize Supabase/Postgres timestamp strings to ISO for reliable Date parsing
+  const parseTimestamp = (timestamp) => {
+    if (!timestamp) return null;
+    if (typeof timestamp === 'string') {
+      const iso = timestamp.includes('T') ? timestamp : timestamp.replace(' ', 'T');
+      const d = new Date(iso);
+      if (!isNaN(d.getTime())) return d;
+    }
+    const fallback = new Date(timestamp);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  };
+
   const formatTimestamp = (timestamp) => {
+    const date = parseTimestamp(timestamp);
+    if (!date) return '';
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    return `${hours}:${minutes} ${day}-${month}`;
+  };
+
+  const formatTimestampWithDate = (timestamp) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+    return date.toLocaleString('id-ID', { 
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit', 
+      minute: '2-digit', 
+      timeZone: 'UTC' 
+    });
+  };
+
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    const now = new Date();
+    const time = parseTimestamp(timestamp);
+    if (!time) return '-';
+    const diffInMinutes = Math.floor((now.getTime() - time.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Baru saja';
+    if (diffInMinutes < 60) return `${diffInMinutes} menit yang lalu`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} jam yang lalu`;
+    return `${Math.floor(diffInMinutes / 1440)} hari yang lalu`;
+  };
+
+  const formatLastConnected = (timestamp) => {
+    if (!timestamp) return '-';
+    const d = parseTimestamp(timestamp) || new Date(timestamp);
+    return d.toLocaleString('id-ID', {
+      timeZone: 'UTC',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
   };
 
   const formatUptime = (seconds) => {
@@ -231,6 +363,64 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
                 </div>
               </div>
 
+              {/* Last Connection Card */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <h4 className="font-semibold mb-3 flex items-center text-blue-700">
+                  <Clock className="w-4 h-4 mr-2" /> Terakhir Terhubung
+                </h4>
+                <div className="space-y-2 text-sm">
+                  {lastConnection ? (
+                    <>
+                      <div className="text-base font-bold text-blue-600">
+                        {formatTimeAgo(lastConnection)}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        {formatLastConnected(lastConnection)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-400 italic">
+                      Belum ada data koneksi
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Device Access Info - For Superadmin and Admin */}
+              {(userRole === 'superadmin' || userRole === 'admin') && (
+                <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
+                  <h4 className="font-semibold mb-3 flex items-center text-teal-700">
+                    <Users className="w-4 h-4 mr-2" /> Device Access {deviceAccess.length > 0 && `(${deviceAccess.length})`}
+                  </h4>
+                  {deviceAccess.length > 0 ? (
+                    <div className="space-y-3 text-sm max-h-64 overflow-y-auto">
+                      {deviceAccess.map((access, index) => (
+                        <div key={index} className="bg-white p-3 rounded border border-teal-100">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-medium text-gray-800">@{access.username}</span>
+                            <Badge variant="outline" className="text-xs">{index + 1}</Badge>
+                          </div>
+                          <div className="text-xs text-gray-500">{access.email}</div>
+                          {access.granted_at && (
+                            <div className="text-xs text-gray-400 mt-2 pt-2 border-t">
+                              Access granted: {new Date(access.granted_at).toLocaleDateString('id-ID', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric'
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400 italic">
+                      Tidak ada user dengan akses khusus ke device ini
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Live Status Card */}
               <div className="bg-slate-50 p-4 rounded-lg border">
                 <h4 className="font-semibold mb-3 flex items-center text-slate-700">
@@ -287,79 +477,85 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
 
             {/* Kolom 2 & 3: Grafik Monitoring */}
             <div className="md:col-span-2 space-y-6">
+              {/* Battery History Chart */}
               <div className="bg-white p-4 rounded-lg border shadow-sm">
-                <h4 className="font-semibold mb-4 text-sm text-gray-600">Battery History (Last 20 Readings)</h4>
-                {loading ? (
-                  <div className="h-[200px] flex items-center justify-center text-gray-400">Loading charts...</div>
+                <h4 className="font-semibold mb-4 text-sm text-gray-600 flex items-center gap-2">
+                  <Battery className="w-4 h-4" /> Battery History
+                </h4>
+                {statusData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={statusData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="time" 
+                        tick={{ fontSize: 11 }}
+                        angle={-15}
+                        textAnchor="end"
+                        height={50}
+                      />
+                      <YAxis 
+                        domain={[0, 100]} 
+                        tick={{ fontSize: 11 }}
+                        label={{ value: 'Battery (%)', angle: -90, position: 'insideLeft', fontSize: 11 }}
+                      />
+                      <Tooltip />
+                      <Line 
+                        type="monotone" 
+                        dataKey="battery" 
+                        stroke="#10b981" 
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        name="Battery (%)"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
                 ) : (
-                  <div className="h-[200px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={statusData}>
-                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                         <XAxis 
-                            dataKey="timestamp" 
-                            tickFormatter={(t) => new Date(t).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 
-                            tick={{fontSize: 10}}
-                            interval="preserveStartEnd"
-                         />
-                         <YAxis domain={[0, 100]} tick={{fontSize: 10}} />
-                         <Tooltip 
-                            contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)'}}
-                            labelFormatter={formatTimestamp} 
-                         />
-                         <Line 
-                            type="monotone" 
-                            dataKey="battery" 
-                            stroke="#10b981" 
-                            strokeWidth={2}
-                            dot={{r: 2, fill: "#10b981"}} 
-                            activeDot={{r: 4}} 
-                         />
-                      </LineChart>
-                    </ResponsiveContainer>
+                  <div className="h-[200px] flex items-center justify-center text-gray-400 text-sm">
+                    No battery data available
                   </div>
                 )}
               </div>
 
+              {/* WiFi Signal Chart */}
               <div className="bg-white p-4 rounded-lg border shadow-sm">
-                <h4 className="font-semibold mb-4 text-sm text-gray-600">WiFi Signal Strength (RSSI)</h4>
-                {loading ? (
-                  <div className="h-[200px] flex items-center justify-center text-gray-400">Loading charts...</div>
+                <h4 className="font-semibold mb-4 text-sm text-gray-600 flex items-center gap-2">
+                  <Wifi className="w-4 h-4" /> WiFi Signal Strength
+                </h4>
+                {statusData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={statusData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="time" 
+                        tick={{ fontSize: 11 }}
+                        angle={-15}
+                        textAnchor="end"
+                        height={50}
+                      />
+                      <YAxis 
+                        domain={[-100, -30]} 
+                        tick={{ fontSize: 11 }}
+                        label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', fontSize: 11 }}
+                      />
+                      <Tooltip />
+                      <Line 
+                        type="monotone" 
+                        dataKey="wifi_rssi" 
+                        stroke="#3b82f6" 
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        name="WiFi Signal (dBm)"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
                 ) : (
-                  <div className="h-[200px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={statusData}>
-                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                         <XAxis 
-                            dataKey="timestamp" 
-                            tickFormatter={(t) => new Date(t).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 
-                            tick={{fontSize: 10}}
-                            interval="preserveStartEnd"
-                         />
-                         <YAxis domain={[-100, -30]} tick={{fontSize: 10}} />
-                         <Tooltip 
-                            contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)'}}
-                            labelFormatter={formatTimestamp} 
-                         />
-                         <Line 
-                            type="monotone" 
-                            dataKey="wifi_rssi" 
-                            stroke="#6366f1" 
-                            strokeWidth={2}
-                            dot={{r: 2, fill: "#6366f1"}}
-                            activeDot={{r: 4}} 
-                         />
-                      </LineChart>
-                    </ResponsiveContainer>
+                  <div className="h-[200px] flex items-center justify-center text-gray-400 text-sm">
+                    No WiFi signal data available
                   </div>
                 )}
-                <p className="mt-3 text-xs text-gray-500 italic border-t pt-2">
-                  *Untuk Sensor Node (SN atau CH) maka RSSI adalah nilai RSSI LoRa
-                </p>
               </div>
 
               {/* --- NEW: KOTAK QR IDENTITY (Serial & ID) --- */}
-              {/* Ini ditambahkan di bawah grafik RSSI sesuai permintaan */}
               <div className="bg-white p-4 rounded-lg border shadow-sm">
                 <h4 className="font-semibold mb-4 text-sm text-gray-600 flex items-center gap-2">
                   <QrCode className="w-4 h-4" /> Device Identity Code

@@ -30,6 +30,7 @@ const InlineSensorPanel: React.FC<Props> = ({ sensor, device, expanded = false, 
     if (t.includes('ph')) return 'ph';
     if (t.includes('batt')) return 'battery';
     if (t.includes('light') || t.includes('lux')) return 'light';
+    if (t.includes('tinggi') || t.includes('water') || t.includes('level')) return 'ketinggian_air';
     return t.replace(/[^a-z0-9_]/g, '_');
   };
 
@@ -52,8 +53,15 @@ const InlineSensorPanel: React.FC<Props> = ({ sensor, device, expanded = false, 
         const jsonVal = r.sensor_data?.[field];
         const legacy = r[field];
         const value = jsonVal !== undefined ? jsonVal : legacy !== undefined ? legacy : null;
+        
         return {
-          t: new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          // Tetap gunakan UTC fix yang tadi
+          t: new Date(r.timestamp).toLocaleTimeString('id-ID', { 
+              timeZone: 'UTC', 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: false
+          }),
           value: value !== null ? Number(value) : null,
         };
       }).filter((r: any) => r.value !== null);
@@ -86,8 +94,16 @@ const InlineSensorPanel: React.FC<Props> = ({ sensor, device, expanded = false, 
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="t" tick={{ fontSize: 10 }} />
-                <YAxis domain={["dataMin", "dataMax"]} tick={{ fontSize: 10 }} />
+                {/* PERBAIKAN DI SINI:
+                    reversed={true} -> Membuat data terbaru di Kiri, data lama di Kanan
+                */}
+                <XAxis 
+                  dataKey="t" 
+                  tick={{ fontSize: 10 }} 
+                  minTickGap={15} 
+                  reversed={true} 
+                />
+                <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10 }} width={30} />
                 <Tooltip />
                 <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={false} />
               </LineChart>

@@ -411,7 +411,7 @@ const Dashboard = () => {
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">{device.name}</p>
                       <p className="text-sm text-gray-500">{device.location}</p>
-                      <p className="text-xs text-gray-400">Last updated: {new Date(device.updated_at).toLocaleString()}</p>
+                      <p className="text-xs text-gray-400">Last updated: {new Date(device.updated_at).toLocaleString('id-ID', { timeZone: 'UTC' })}</p>
                     </div>
                     <div className="text-right space-y-1">
                       <Badge variant={device.status === 'online' ? 'default' : 'destructive'}>

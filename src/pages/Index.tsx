@@ -6,6 +6,7 @@ import Dashboard from '../components/Dashboard';
 import Devices from '../components/Devices';
 import Sensors from '../components/Sensors';
 import Monitoring from '../components/Monitoring';
+import PublicAccess from '../components/PublicAccess';
 import Settings from '../components/Settings';
 import WeatherPrediction from '../components/WeatherPrediction';
 import About from '../components/About';
@@ -107,6 +108,8 @@ const Index = () => {
         return <Sensors />;
       case 'monitoring':
         return <Monitoring />;
+      case 'public-access':
+        return <PublicAccess />;
       case 'weather-station':
         return <WeatherStation />;
       case 'prediction':

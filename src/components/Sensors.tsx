@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Trash2, Plus, Activity } from 'lucide-react';
+import { Trash2, Plus, Activity, Edit } from 'lucide-react';
 import DevicePagination from './DevicePagination';
 
 const Sensors = () => {
@@ -17,6 +17,7 @@ const Sensors = () => {
   const [devices, setDevices] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState('user');
   const [newSensor, setNewSensor] = useState({
@@ -26,6 +27,17 @@ const Sensors = () => {
     unit: '',
     min_value: '',
     max_value: '',
+    description: ''
+  });
+  const [editSensor, setEditSensor] = useState({
+    id: '',
+    name: '',
+    min_value: '',
+    max_value: '',
+    calibration_a: '1',
+    calibration_b: '0',
+    threshold_low: '',
+    threshold_high: '',
     description: ''
   });
 
@@ -294,6 +306,70 @@ const Sensors = () => {
     }
   };
 
+  const handleEditSensor = (sensor) => {
+    setEditSensor({
+      id: sensor.id,
+      name: sensor.name,
+      min_value: sensor.min_value?.toString() || '',
+      max_value: sensor.max_value?.toString() || '',
+      calibration_a: sensor.calibration_a?.toString() || '1',
+      calibration_b: sensor.calibration_b?.toString() || '0',
+      threshold_low: sensor.threshold_low?.toString() || '',
+      threshold_high: sensor.threshold_high?.toString() || '',
+      description: sensor.description || ''
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateSensor = async () => {
+    try {
+      const sensorData: any = {
+        description: editSensor.description
+      };
+
+      if (editSensor.min_value) {
+        sensorData.min_value = parseFloat(editSensor.min_value);
+      }
+      if (editSensor.max_value) {
+        sensorData.max_value = parseFloat(editSensor.max_value);
+      }
+      if (editSensor.calibration_a) {
+        sensorData.calibration_a = parseFloat(editSensor.calibration_a);
+      }
+      if (editSensor.calibration_b) {
+        sensorData.calibration_b = parseFloat(editSensor.calibration_b);
+      }
+      if (editSensor.threshold_low) {
+        sensorData.threshold_low = parseFloat(editSensor.threshold_low);
+      }
+      if (editSensor.threshold_high) {
+        sensorData.threshold_high = parseFloat(editSensor.threshold_high);
+      }
+
+      const { error } = await supabase
+        .from('sensors')
+        .update(sensorData)
+        .eq('id', editSensor.id);
+
+      if (error) throw error;
+
+      fetchSensors();
+      setIsEditDialogOpen(false);
+      
+      toast({
+        title: "Sensor Updated",
+        description: `${editSensor.name} has been updated successfully`,
+      });
+    } catch (error) {
+      console.error('Error updating sensor:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update sensor",
+        variant: "destructive",
+      });
+    }
+  };
+
   const getDeviceName = (deviceId) => {
     const device = devices.find(d => d.id === deviceId);
     return device ? device.name : 'Unknown Device';
@@ -426,6 +502,168 @@ const Sensors = () => {
         )}
       </div>
 
+      {/* Edit Sensor Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Sensor: {editSensor.name}</DialogTitle>
+            <DialogDescription>
+              Edit konfigurasi sensor termasuk kalibrasi dan threshold untuk notifikasi
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Min & Max Values */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_minValue">Min Value</Label>
+                <Input
+                  id="edit_minValue"
+                  type="number"
+                  step="any"
+                  placeholder="0"
+                  value={editSensor.min_value}
+                  onChange={(e) => setEditSensor({...editSensor, min_value: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_maxValue">Max Value</Label>
+                <Input
+                  id="edit_maxValue"
+                  type="number"
+                  step="any"
+                  placeholder="100"
+                  value={editSensor.max_value}
+                  onChange={(e) => setEditSensor({...editSensor, max_value: e.target.value})}
+                />
+              </div>
+            </div>
+
+            {/* Calibration Section */}
+            <div className="border-t pt-4">
+              <h3 className="font-semibold text-lg mb-3">Kalibrasi Sensor</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Persamaan: <code className="bg-gray-100 px-2 py-1 rounded">y = ax + b</code>
+                <br />
+                <span className="text-xs">y = output (hasil kalibrasi), a = koefisien, b = bias, x = input sensor</span>
+              </p>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="calibration_a">
+                    Koefisien (a)
+                    <span className="text-xs text-gray-500 ml-2">Default: 1</span>
+                  </Label>
+                  <Input
+                    id="calibration_a"
+                    type="number"
+                    step="any"
+                    placeholder="1"
+                    value={editSensor.calibration_a}
+                    onChange={(e) => setEditSensor({...editSensor, calibration_a: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="calibration_b">
+                    Bias (b)
+                    <span className="text-xs text-gray-500 ml-2">Default: 0</span>
+                  </Label>
+                  <Input
+                    id="calibration_b"
+                    type="number"
+                    step="any"
+                    placeholder="0"
+                    value={editSensor.calibration_b}
+                    onChange={(e) => setEditSensor({...editSensor, calibration_b: e.target.value})}
+                  />
+                </div>
+              </div>
+              
+              {/* Calibration Preview */}
+              {editSensor.calibration_a && editSensor.calibration_b && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-sm">
+                    <strong>Contoh Perhitungan:</strong> Jika input sensor (x) = 10, maka:
+                    <br />
+                    y = ({editSensor.calibration_a}) × 10 + ({editSensor.calibration_b}) = {(parseFloat(editSensor.calibration_a || '1') * 10 + parseFloat(editSensor.calibration_b || '0')).toFixed(2)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Threshold Section */}
+            <div className="border-t pt-4">
+              <h3 className="font-semibold text-lg mb-3">Threshold Notifikasi/Alarm</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Set batas nilai untuk trigger notifikasi ke Telegram atau alarm
+              </p>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="threshold_low" className="flex items-center gap-2">
+                    <span className="text-yellow-600">⚠️</span>
+                    Threshold Low
+                  </Label>
+                  <Input
+                    id="threshold_low"
+                    type="number"
+                    step="any"
+                    placeholder="Nilai minimum untuk alarm"
+                    value={editSensor.threshold_low}
+                    onChange={(e) => setEditSensor({...editSensor, threshold_low: e.target.value})}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Alarm akan aktif jika nilai sensor {'<'} threshold ini
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="threshold_high" className="flex items-center gap-2">
+                    <span className="text-red-600">🚨</span>
+                    Threshold High
+                  </Label>
+                  <Input
+                    id="threshold_high"
+                    type="number"
+                    step="any"
+                    placeholder="Nilai maksimum untuk alarm"
+                    value={editSensor.threshold_high}
+                    onChange={(e) => setEditSensor({...editSensor, threshold_high: e.target.value})}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Alarm akan aktif jika nilai sensor {'>'} threshold ini
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="edit_description">Description (Optional)</Label>
+              <Textarea
+                id="edit_description"
+                placeholder="Description about this sensor"
+                value={editSensor.description}
+                onChange={(e) => setEditSensor({...editSensor, description: e.target.value})}
+                rows={3}
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button onClick={handleUpdateSensor} className="flex-1">
+                Update Sensor
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setIsEditDialogOpen(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Sensor Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
@@ -538,14 +776,24 @@ const Sensors = () => {
                   </div>
                   <div className="flex space-x-2">
                     {canManageSensors && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleDeleteSensor(sensor.id)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleEditSensor(sensor)}
+                          className="text-blue-600 hover:text-blue-700"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleDeleteSensor(sensor.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
