@@ -14,6 +14,22 @@ const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 // Token Bot Hardware (@AstrodevIoT_bot)
 const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN_DEVICE')!;
 
+// Map payload keys to sensor types (sama seperti mqtt-data-handler)
+const SENSOR_TYPE_MAP: Record<string, string> = {
+  temperature: 'Temperature',
+  humidity: 'Humidity',
+  pressure: 'Pressure',
+  battery: 'Battery',
+  ketinggian_air: 'Ketinggian Air',
+  curah_hujan: 'Curah Hujan',
+  light: 'Light',
+  o2: 'O2',
+  co2: 'CO2',
+  ph: 'pH',
+  arah_angin: 'Arah Angin',
+  kecepatan_angin: 'Kecepatan Angin'
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -65,6 +81,9 @@ serve(async (req) => {
       const timestampDate = sensor_data.timestamp ? new Date(sensor_data.timestamp) : new Date();
       const timeStr = formatDateToGMT7(timestampDate);
 
+      console.log(`[DEBUG] Processing sensor_update for device ${device_id}`);
+      console.log(`[DEBUG] Sensor data:`, sensor_data);
+
       // Ambil konfigurasi Min/Max dari tabel 'sensors'
       const { data: sensorConfigs } = await supabaseClient
         .from('sensors')
@@ -72,21 +91,43 @@ serve(async (req) => {
         .eq('device_id', device_id)
         .eq('is_active', true);
 
+      console.log(`[DEBUG] Found ${sensorConfigs?.length || 0} sensor configs`);
+
       // Loop setiap key di data yang masuk (misal: temperature, humidity)
       for (const [key, value] of Object.entries(sensor_data)) {
         if (key === 'timestamp') continue; // Skip timestamp
 
+        console.log(`[DEBUG] Processing key: ${key}, value: ${value}`);
+
         // Cari config sensor yang cocok dengan key ini
-        // Kita cari yang 'type'-nya mengandung nama key (misal type='Temperature Sensor' mengandung 'temp')
-        const config = sensorConfigs?.find(s => s.type.toLowerCase().includes(key.toLowerCase()) || s.name.toLowerCase().includes(key.toLowerCase()));
+        // Gunakan SENSOR_TYPE_MAP untuk matching yang konsisten
+        const mappedType = SENSOR_TYPE_MAP[key];
+        const config = sensorConfigs?.find(s => {
+          // Match by mapped type (case insensitive)
+          if (mappedType && s.type?.toLowerCase() === mappedType.toLowerCase()) return true;
+          // Fallback: match by name
+          if (s.name && s.name.toLowerCase().includes(key.toLowerCase())) return true;
+          // Fallback: match by type containing key
+          if (s.type && s.type.toLowerCase().includes(key.toLowerCase())) return true;
+          return false;
+        });
+
+        if (config) {
+          console.log(`[DEBUG] Found matching sensor config:`, config);
+        } else {
+          console.log(`[DEBUG] No config found for key: ${key}`);
+        }
 
         if (config && typeof value === 'number') {
           const min = config.min_value;
           const max = config.max_value;
           const unit = config.unit || '';
 
+          console.log(`[DEBUG] Checking thresholds - Min: ${min}, Max: ${max}, Value: ${value}`);
+
           // Cek Batas Bawah
-          if (min !== null && value < min) {
+          if (min !== null && min !== undefined && value < min) {
+            console.log(`[DEBUG] LOW threshold triggered for ${config.name}`);
             notifications.push(`📉 *LOW ${config.name.toUpperCase()} ALERT*
 
 📱 *Device:* ${deviceName}
@@ -97,7 +138,8 @@ _Nilai sensor terlalu rendah._`);
           }
 
           // Cek Batas Atas
-          if (max !== null && value > max) {
+          if (max !== null && max !== undefined && value > max) {
+            console.log(`[DEBUG] HIGH threshold triggered for ${config.name}`);
             notifications.push(`📈 *HIGH ${config.name.toUpperCase()} ALERT*
 
 📱 *Device:* ${deviceName}
@@ -108,6 +150,8 @@ _Nilai sensor melebihi batas aman._`);
           }
         }
       }
+
+      console.log(`[DEBUG] Total notifications generated: ${notifications.length}`);
     }
 
     // ---------------------------------------------------------
