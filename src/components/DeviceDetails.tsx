@@ -15,6 +15,11 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
   const [userRole, setUserRole] = useState('user');
   const [lastConnection, setLastConnection] = useState(null);
   const [deviceAccess, setDeviceAccess] = useState([]);
+  const [batteryThreshold, setBatteryThreshold] = useState<number | ''>('');
+  const [wifiThreshold, setWifiThreshold] = useState<number | ''>('');
+  const [savingThresholds, setSavingThresholds] = useState(false);
+  const DEFAULT_BATTERY_THRESHOLD = 20;
+  const DEFAULT_WIFI_RSSI_THRESHOLD = -85;
   
   const stickerRef = useRef(null);
 
@@ -25,6 +30,7 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
       fetchUserRole();
       fetchLastConnection();
       fetchDeviceAccess();
+      fetchDeviceThresholds();
     }
   }, [device, open]);
 
@@ -116,6 +122,52 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
         .maybeSingle();
       if (!error && data) setLastConnection(data.timestamp);
     } catch (error) { console.error(error); }
+  };
+
+  const fetchDeviceThresholds = async () => {
+    if (!device) return;
+    try {
+      const { data, error } = await supabase
+        .from('devices')
+        .select('battery_low_threshold_percent, wifi_rssi_weak_threshold_dbm')
+        .eq('id', device.id)
+        .single();
+      if (error) return;
+      const bat = (data?.battery_low_threshold_percent ?? DEFAULT_BATTERY_THRESHOLD);
+      const rssi = (data?.wifi_rssi_weak_threshold_dbm ?? DEFAULT_WIFI_RSSI_THRESHOLD);
+      setBatteryThreshold(bat);
+      setWifiThreshold(rssi);
+      // Backfill defaults if nulls
+      if (data && (data.battery_low_threshold_percent == null || data.wifi_rssi_weak_threshold_dbm == null)) {
+        await supabase
+          .from('devices')
+          .update({
+            battery_low_threshold_percent: data.battery_low_threshold_percent ?? DEFAULT_BATTERY_THRESHOLD,
+            wifi_rssi_weak_threshold_dbm: data.wifi_rssi_weak_threshold_dbm ?? DEFAULT_WIFI_RSSI_THRESHOLD
+          })
+          .eq('id', device.id);
+      }
+    } catch (error) { console.error(error); }
+  };
+
+  const saveThresholds = async () => {
+    if (!device) return;
+    try {
+      setSavingThresholds(true);
+      const bat = typeof batteryThreshold === 'string' ? parseInt(batteryThreshold || '0', 10) : batteryThreshold;
+      const rssi = typeof wifiThreshold === 'string' ? parseInt(wifiThreshold || '0', 10) : wifiThreshold;
+      await supabase
+        .from('devices')
+        .update({
+          battery_low_threshold_percent: bat,
+          wifi_rssi_weak_threshold_dbm: rssi
+        })
+        .eq('id', device.id);
+    } catch (error) {
+      console.error('Failed to save thresholds:', error);
+    } finally {
+      setSavingThresholds(false);
+    }
   };
 
   const fetchLatestDeviceStatus = async () => {
@@ -429,7 +481,7 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 flex items-center"><Battery className="w-3 h-3 mr-1"/> Battery</span>
-                    <span className={`font-bold ${device.battery < 20 ? 'text-red-500' : 'text-green-600'}`}>
+                    <span className={`font-bold ${device.battery < (batteryThreshold || DEFAULT_BATTERY_THRESHOLD) ? 'text-red-500' : 'text-green-600'}`}>
                       {device.battery}%
                     </span>
                   </div>
@@ -453,6 +505,41 @@ const DeviceDetails = ({ device, open, onOpenChange, onEdit }) => {
                   </div>
                 </div>
               </div>
+
+              {(userRole === 'superadmin' || userRole === 'admin') && (
+                <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                  <h4 className="font-semibold mb-3 text-amber-700 flex items-center gap-2">
+                    <BellRing className="w-4 h-4" /> Status Alert Thresholds
+                  </h4>
+                  <div className="grid grid-cols-1 gap-3 text-sm">
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-gray-600">Battery low threshold (%)</span>
+                      <input
+                        type="number"
+                        className="w-28 border rounded px-2 py-1 text-right"
+                        value={batteryThreshold}
+                        onChange={(e) => setBatteryThreshold(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                        placeholder={`${DEFAULT_BATTERY_THRESHOLD}`}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-gray-600">WiFi weak threshold (dBm)</span>
+                      <input
+                        type="number"
+                        className="w-28 border rounded px-2 py-1 text-right"
+                        value={wifiThreshold}
+                        onChange={(e) => setWifiThreshold(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                        placeholder={`${DEFAULT_WIFI_RSSI_THRESHOLD}`}
+                      />
+                    </label>
+                    <div className="flex justify-end">
+                      <Button onClick={saveThresholds} disabled={savingThresholds} className="bg-amber-600 hover:bg-amber-700 text-white">
+                        <Save className="w-4 h-4 mr-2" /> {savingThresholds ? 'Saving...' : 'Save Thresholds'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Telegram Alert Setup */}
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex flex-col items-center text-center">

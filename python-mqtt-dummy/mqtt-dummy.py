@@ -41,7 +41,7 @@ SCENARIOS = {
         "desc": "[!!!] CUACA EKSTREM (Air Normal, Hujan Badai)",
         "water_range": (10.0, 18.0),
         "rain_range": (25.0, 50.0),
-        "batt_range": (50, 70)
+        "batt_range": (10, 15)
     }
 }
 
@@ -141,7 +141,7 @@ class DeviceManualTrigger:
             # 1. Generate Data
             water, rain, battery = self.get_simulated_values(dev["scenario"])
             dev["uptime"] += 60
-            wifi_rssi = random.randint(-85, -45)
+            wifi_rssi = random.randint(-120, -70)
             free_heap = random.randint(80000, 120000)
 
             # 2. Timestamp WIB
