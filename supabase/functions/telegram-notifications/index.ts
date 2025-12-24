@@ -84,12 +84,11 @@ serve(async (req) => {
       console.log(`[DEBUG] Processing sensor_update for device ${device_id}`);
       console.log(`[DEBUG] Sensor data:`, sensor_data);
 
-      // Ambil konfigurasi Min/Max dari tabel 'sensors'
+      // Ambil konfigurasi threshold dari tabel 'sensors'
       const { data: sensorConfigs } = await supabaseClient
         .from('sensors')
-        .select('type, name, min_value, max_value, unit')
-        .eq('device_id', device_id)
-        .eq('is_active', true);
+        .select('type, name, threshold_low, threshold_high, unit')
+        .eq('device_id', device_id);
 
       console.log(`[DEBUG] Found ${sensorConfigs?.length || 0} sensor configs`);
 
@@ -119,8 +118,8 @@ serve(async (req) => {
         }
 
         if (config && typeof value === 'number') {
-          const min = config.min_value;
-          const max = config.max_value;
+          const min = (config as any).threshold_low;
+          const max = (config as any).threshold_high;
           const unit = config.unit || '';
 
           console.log(`[DEBUG] Checking thresholds - Min: ${min}, Max: ${max}, Value: ${value}`);
